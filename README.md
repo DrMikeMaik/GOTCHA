@@ -12,9 +12,7 @@ This is a fun perception demo, not a serious CAPTCHA product, but it can also be
 
 Direct MP4 link: [assets/secret.mp4](assets/secret.mp4)
 
-<video src="assets/secret.mp4" controls muted playsinline width="720">
-  Your browser does not support embedded video. Use the direct link above.
-</video>
+[![Watch the sample animation](assets/secret-preview.png)](assets/secret.mp4)
 
 <details>
 <summary>Reveal</summary>
