@@ -2,11 +2,11 @@
 
 **G**liding **O**ptical **T**rick to **C**hallenge **H**umans vs **A**lgorithms
 
-GOTCHA is a tiny single-file proof of concept: a word is hidden inside moving noise, and humans can usually read it almost immediately while simpler image-processing approaches struggle.
+GOTCHA is a tiny single-file proof of concept: a word is hidden inside moving noise, and humans can usually read it almost immediately while current general-purpose AI systems and simpler image-processing approaches can struggle.
 
 Each individual frame looks like random noise. A screenshot is not enough to reveal the word; the text only emerges across time through motion.
 
-This is a fun perception demo, not a serious CAPTCHA product.
+This is a fun perception demo, not a serious CAPTCHA product, but it can also be thought of as a way to send very short human-readable messages in a format that does not survive screenshots.
 
 ## Example
 
@@ -24,7 +24,7 @@ Hidden word: `TIMBER`
 
 ## Why it is interesting
 
-The effect leans on motion segmentation. Humans are very good at grouping pixels that move together, even when the static image looks like nonsense. That makes this a neat toy example of perception that is easy for people and awkward for a lot of naive algorithms.
+The effect leans on motion segmentation. Humans are very good at grouping pixels that move together, even when the static image looks like nonsense. That makes this a neat toy example of perception that is easy for people and awkward for a lot of naive algorithms and current off-the-shelf AI systems.
 
 ## Running it
 
@@ -60,6 +60,7 @@ Useful flags:
 
 - This is intentionally small and self-contained.
 - It is best treated as a demo or toy experiment.
+- It is fair to describe this as AI-resistant today, not AI-proof forever.
 - Stronger computer vision pipelines may still recover the text.
 
 ## License
