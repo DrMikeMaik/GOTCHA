@@ -1,2 +1,65 @@
 # GOTCHA
-Agent proof CAPTCHA
+
+**G**liding **O**ptical **T**rick to **C**hallenge **H**umans vs **A**lgorithms
+
+GOTCHA is a tiny single-file proof of concept: a word is hidden inside moving noise, and humans can usually read it almost immediately while simpler image-processing approaches struggle.
+
+This is a fun perception demo, not a serious CAPTCHA product.
+
+## Example
+
+Sample output: [assets/secret.mp4](assets/secret.mp4)
+
+Hidden word: `TIMBER`
+
+## How it works
+
+- The background is random noise moving in one direction.
+- The text is made from a different noise pattern moving in another direction.
+- The whole word can drift slowly around the frame.
+- In any single frame there is barely any usable edge or contrast information.
+- Over time, motion makes the text pop out for humans.
+
+## Why it is interesting
+
+The effect leans on motion segmentation. Humans are very good at grouping pixels that move together, even when the static image looks like nonsense. That makes this a neat toy example of perception that is easy for people and awkward for a lot of naive algorithms.
+
+## Running it
+
+With Poetry:
+
+```bash
+poetry install
+poetry run python text_noise_video.py --text TIMBER --output timber.mp4
+```
+
+Without Poetry:
+
+```bash
+pip install numpy pillow imageio imageio-ffmpeg
+python text_noise_video.py --text TIMBER --output timber.mp4
+```
+
+See all options with:
+
+```bash
+python text_noise_video.py --help
+```
+
+Useful flags:
+
+- `--gif` to write a GIF instead of MP4
+- `--seed` for reproducible output
+- `--grain` to make the noise coarser or finer
+- `--text-drift` and `--text-drift-speed` to change how much the word wanders
+- `--font` to use a specific `.ttf` or `.otf` file
+
+## Notes
+
+- This is intentionally small and self-contained.
+- It is best treated as a demo or toy experiment.
+- Stronger computer vision pipelines may still recover the text.
+
+## License
+
+[MIT](LICENSE)
