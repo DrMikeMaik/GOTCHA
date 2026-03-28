@@ -4,6 +4,8 @@
 
 GOTCHA is a tiny single-file proof of concept: a word is hidden inside moving noise, and humans can usually read it almost immediately while simpler image-processing approaches struggle.
 
+Each individual frame looks like random noise. A screenshot is not enough to reveal the word; the text only emerges across time through motion.
+
 This is a fun perception demo, not a serious CAPTCHA product.
 
 ## Example
@@ -17,7 +19,7 @@ Hidden word: `TIMBER`
 - The background is random noise moving in one direction.
 - The text is made from a different noise pattern moving in another direction.
 - The whole word can drift slowly around the frame.
-- In any single frame there is barely any usable edge or contrast information.
+- In any single frame there is no obvious screenshot-friendly text to read.
 - Over time, motion makes the text pop out for humans.
 
 ## Why it is interesting
