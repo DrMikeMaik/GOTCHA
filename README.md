@@ -10,9 +10,18 @@ This is a fun perception demo, not a serious CAPTCHA product, but it can also be
 
 ## Example
 
-Sample output: [assets/secret.mp4](assets/secret.mp4)
+Direct MP4 link: [assets/secret.mp4](assets/secret.mp4)
 
-Hidden word: `TIMBER`
+<video src="assets/secret.mp4" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
+</video>
+
+<details>
+<summary>Reveal</summary>
+
+**TIMBER**
+
+</details>
 
 ## How it works
 
@@ -62,6 +71,10 @@ Useful flags:
 - It is best treated as a demo or toy experiment.
 - It is fair to describe this as AI-resistant today, not AI-proof forever.
 - Stronger computer vision pipelines may still recover the text.
+
+## Inspiration
+
+This project was directly inspired by [this YouTube video](https://www.youtube.com/watch?v=RNhiT-SmR1Q).
 
 ## License
 
