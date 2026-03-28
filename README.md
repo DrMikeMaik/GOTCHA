@@ -10,9 +10,9 @@ This is a fun perception demo, not a serious CAPTCHA product, but it can also be
 
 ## Example
 
-Direct MP4 link: [assets/secret.mp4](assets/secret.mp4)
+![Sample animation](assets/secret.gif)
 
-[![Watch the sample animation](assets/secret-preview.png)](assets/secret.mp4)
+High-quality MP4: [assets/secret.mp4](assets/secret.mp4)
 
 <details>
 <summary>Reveal</summary>
