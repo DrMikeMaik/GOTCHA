@@ -10,9 +10,11 @@ This is a fun perception demo, not a serious CAPTCHA product, but it can also be
 
 ## Example
 
-![Sample animation](assets/secret.gif)
+Direct MP4 link: [assets/secret.mp4](assets/secret.mp4)
 
-High-quality MP4: [assets/secret.mp4](assets/secret.mp4)
+<video src="https://github.com/user-attachments/assets/094cc537-18a5-4854-b6d2-7a48b80a8a9f" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
+</video>
 
 <details>
 <summary>Reveal</summary>
@@ -22,6 +24,10 @@ High-quality MP4: [assets/secret.mp4](assets/secret.mp4)
 </details>
 
 ## How it works
+
+
+https://github.com/user-attachments/assets/094cc537-18a5-4854-b6d2-7a48b80a8a9f
+
 
 - The background is random noise moving in one direction.
 - The text is made from a different noise pattern moving in another direction.
