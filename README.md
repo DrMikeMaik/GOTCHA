@@ -63,6 +63,8 @@ Useful flags:
 - `--seed` for reproducible output
 - `--grain` to make the noise coarser or finer
 - `--text-drift` and `--text-drift-speed` to change how much the word wanders
+- `--border-width` to add a solid outline around the word
+- `--border-color` to choose a simple named outline color such as `black` or `red`
 - `--font` to use a specific `.ttf` or `.otf` file
 
 ## Notes

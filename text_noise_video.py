@@ -36,7 +36,20 @@ DEFAULT_GRAIN = 3
 DEFAULT_FEATHER = 1.25
 DEFAULT_TEXT_DRIFT = 200.0
 DEFAULT_TEXT_DRIFT_SPEED = 0.16
+DEFAULT_BORDER_WIDTH = 0
+DEFAULT_BORDER_COLOR = "black"
 DEFAULT_SEED = None
+
+NAMED_COLORS = {
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
+    "yellow": (255, 255, 0),
+    "cyan": (0, 255, 255),
+    "magenta": (255, 0, 255),
+}
 
 FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -107,6 +120,17 @@ def parse_args() -> argparse.Namespace:
         help="Whole-text drift speed in cycles per second.",
     )
     parser.add_argument(
+        "--border-width",
+        type=int,
+        default=DEFAULT_BORDER_WIDTH,
+        help="Solid outline thickness in pixels. Set to 0 to disable.",
+    )
+    parser.add_argument(
+        "--border-color",
+        default=DEFAULT_BORDER_COLOR,
+        help="Named outline color. Defaults to black.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=DEFAULT_SEED,
@@ -139,6 +163,14 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Text drift must be 0 or greater.")
     if args.text_drift_speed < 0:
         raise SystemExit("Text drift speed must be 0 or greater.")
+    if args.border_width < 0:
+        raise SystemExit("Border width must be 0 or greater.")
+    if args.border_color.lower() not in NAMED_COLORS:
+        raise SystemExit(
+            "Border color must be one of: "
+            + ", ".join(sorted(NAMED_COLORS))
+            + "."
+        )
     if not args.text.strip():
         raise SystemExit("Text cannot be empty.")
 
@@ -220,14 +252,13 @@ def fit_text(
     return wrap_text_to_width(text, load_font(font_path, 12), max_width, probe_draw), load_font(font_path, 12)
 
 
-def make_text_mask(
+def render_text_image(
     text: str,
     width: int,
     height: int,
     font_size: int,
-    feather: float,
     font_path: Optional[str],
-) -> np.ndarray:
+) -> Image.Image:
     wrapped_text, font = fit_text(text, width, height, font_size, font_path)
     image = Image.new("L", (width, height), 0)
     draw = ImageDraw.Draw(image)
@@ -241,10 +272,35 @@ def make_text_mask(
     )
     draw.multiline_text(origin, wrapped_text, fill=255, font=font, align="center", spacing=spacing)
 
+    return image
+
+
+def make_text_mask(
+    text_image: Image.Image,
+    feather: float,
+) -> np.ndarray:
+    image = text_image
     if feather > 0:
         image = image.filter(ImageFilter.GaussianBlur(radius=feather))
 
     return np.asarray(image, dtype=np.float32) / 255.0
+
+
+def make_outline_mask(
+    text_image: Image.Image,
+    border_width: int,
+) -> np.ndarray:
+    if border_width <= 0:
+        return np.zeros(text_image.size[::-1], dtype=np.float32)
+
+    size = border_width * 2 + 1
+    expanded = text_image.filter(ImageFilter.MaxFilter(size=size))
+    outline = np.asarray(expanded, dtype=np.float32) - np.asarray(text_image, dtype=np.float32)
+    return np.clip(outline / 255.0, 0.0, 1.0)
+
+
+def resolve_border_color(color_name: str) -> np.ndarray:
+    return np.asarray(NAMED_COLORS[color_name.lower()], dtype=np.float32)
 
 
 def make_noise(
@@ -263,7 +319,9 @@ def make_noise(
 def compose_frame(
     background_noise: np.ndarray,
     text_noise: np.ndarray,
-    mask: np.ndarray,
+    text_mask: np.ndarray,
+    outline_mask: np.ndarray,
+    border_color: np.ndarray,
     background_offset: int,
     text_offset: int,
     width: int,
@@ -271,9 +329,11 @@ def compose_frame(
 ) -> np.ndarray:
     background = background_noise[:, background_offset : background_offset + width]
     text_layer = text_noise[text_offset : text_offset + height, :]
-    frame = background * (1.0 - mask) + text_layer * mask
-    rgb = np.clip(frame * 255.0, 0.0, 255.0).astype(np.uint8)
-    return np.repeat(rgb[:, :, None], 3, axis=2)
+    frame = background * (1.0 - text_mask) + text_layer * text_mask
+    rgb = np.repeat(frame[:, :, None], 3, axis=2) * 255.0
+    if np.any(outline_mask):
+        rgb = rgb * (1.0 - outline_mask[:, :, None]) + border_color * outline_mask[:, :, None]
+    return np.clip(rgb, 0.0, 255.0).astype(np.uint8)
 
 
 def shift_mask(mask: np.ndarray, x_offset: int, y_offset: int) -> np.ndarray:
@@ -330,13 +390,18 @@ def build_animation(
     speed: float,
     grain: int,
     feather: float,
+    border_width: int,
+    border_color: str,
     text_drift: float,
     text_drift_speed: float,
     seed: Optional[int],
     font_path: Optional[str],
 ) -> Iterable[np.ndarray]:
     rng = np.random.default_rng(seed)
-    base_mask = make_text_mask(text, width, height, font_size, feather, font_path)
+    text_image = render_text_image(text, width, height, font_size, font_path)
+    base_text_mask = make_text_mask(text_image, feather)
+    base_outline_mask = make_outline_mask(text_image, border_width)
+    border_rgb = resolve_border_color(border_color)
     text_noise = make_noise(rng, height, width, grain)
     text_noise = np.concatenate((text_noise, text_noise), axis=0)
 
@@ -349,11 +414,14 @@ def build_animation(
         frame_offsets(frame_count, speed, height),
         text_drift_offsets(frame_count, fps, text_drift, text_drift_speed),
     ):
-        mask = shift_mask(base_mask, x_offset, y_offset)
+        text_mask = shift_mask(base_text_mask, x_offset, y_offset)
+        outline_mask = shift_mask(base_outline_mask, x_offset, y_offset)
         yield compose_frame(
             background_noise,
             text_noise,
-            mask,
+            text_mask,
+            outline_mask,
+            border_rgb,
             background_offset,
             text_offset,
             width,
@@ -403,6 +471,8 @@ def main() -> None:
         speed=args.speed,
         grain=args.grain,
         feather=args.feather,
+        border_width=args.border_width,
+        border_color=args.border_color,
         text_drift=args.text_drift,
         text_drift_speed=args.text_drift_speed,
         seed=args.seed,
