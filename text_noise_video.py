@@ -37,6 +37,7 @@ DEFAULT_FEATHER = 1.25
 DEFAULT_TEXT_DRIFT = 200.0
 DEFAULT_TEXT_DRIFT_SPEED = 0.16
 DEFAULT_BORDER_WIDTH = 0
+DEFAULT_BORDER_STYLE = "solid"
 DEFAULT_BORDER_COLOR = "black"
 DEFAULT_SEED = None
 
@@ -50,6 +51,8 @@ NAMED_COLORS = {
     "cyan": (0, 255, 255),
     "magenta": (255, 0, 255),
 }
+
+BORDER_STYLES = ("solid", "invert")
 
 FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -123,12 +126,18 @@ def parse_args() -> argparse.Namespace:
         "--border-width",
         type=int,
         default=DEFAULT_BORDER_WIDTH,
-        help="Solid outline thickness in pixels. Set to 0 to disable.",
+        help="Outline thickness in pixels. Set to 0 to disable.",
+    )
+    parser.add_argument(
+        "--border-style",
+        choices=BORDER_STYLES,
+        default=DEFAULT_BORDER_STYLE,
+        help="Border rendering mode. Defaults to solid.",
     )
     parser.add_argument(
         "--border-color",
         default=DEFAULT_BORDER_COLOR,
-        help="Named outline color. Defaults to black.",
+        help="Named outline color for solid borders. Defaults to black.",
     )
     parser.add_argument(
         "--seed",
@@ -165,7 +174,13 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Text drift speed must be 0 or greater.")
     if args.border_width < 0:
         raise SystemExit("Border width must be 0 or greater.")
-    if args.border_color.lower() not in NAMED_COLORS:
+    if args.border_style not in BORDER_STYLES:
+        raise SystemExit(
+            "Border style must be one of: "
+            + ", ".join(BORDER_STYLES)
+            + "."
+        )
+    if args.border_style == "solid" and args.border_color.lower() not in NAMED_COLORS:
         raise SystemExit(
             "Border color must be one of: "
             + ", ".join(sorted(NAMED_COLORS))
@@ -299,8 +314,105 @@ def make_outline_mask(
     return np.clip(outline / 255.0, 0.0, 1.0)
 
 
+def distance_offset_groups(border_width: int) -> list[np.ndarray]:
+    offsets_by_distance: dict[int, list[tuple[int, int]]] = {}
+    for dy in range(-border_width, border_width + 1):
+        for dx in range(-border_width, border_width + 1):
+            if dy == 0 and dx == 0:
+                continue
+            distance_sq = dy * dy + dx * dx
+            offsets_by_distance.setdefault(distance_sq, []).append((dy, dx))
+
+    return [
+        np.asarray(offsets_by_distance[distance_sq], dtype=np.int16)
+        for distance_sq in sorted(offsets_by_distance)
+    ]
+
+
+def build_outline_source_offsets(
+    text_image: Image.Image,
+    outline_mask: np.ndarray,
+    border_width: int,
+) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+    outline_coords = np.argwhere(outline_mask > 0)
+    if border_width <= 0 or outline_coords.size == 0:
+        return (
+            np.empty(0, dtype=np.int16),
+            np.empty(0, dtype=np.int16),
+            [],
+        )
+
+    text_pixels = np.asarray(text_image, dtype=np.uint8) > 0
+    height, width = text_pixels.shape
+    offset_groups = distance_offset_groups(border_width)
+    candidates: list[np.ndarray] = []
+
+    for y, x in outline_coords:
+        found = None
+        for offsets in offset_groups:
+            sample_y = y + offsets[:, 0]
+            sample_x = x + offsets[:, 1]
+            in_bounds = (
+                (sample_y >= 0)
+                & (sample_y < height)
+                & (sample_x >= 0)
+                & (sample_x < width)
+            )
+            if not np.any(in_bounds):
+                continue
+
+            valid_offsets = offsets[in_bounds]
+            valid_y = sample_y[in_bounds]
+            valid_x = sample_x[in_bounds]
+            hits = text_pixels[valid_y, valid_x]
+            if np.any(hits):
+                found = valid_offsets[hits]
+                break
+
+        if found is None:
+            raise RuntimeError("Failed to map an outline pixel to source text pixels.")
+
+        candidates.append(found)
+
+    return (
+        outline_coords[:, 0].astype(np.int16),
+        outline_coords[:, 1].astype(np.int16),
+        candidates,
+    )
+
+
 def resolve_border_color(color_name: str) -> np.ndarray:
     return np.asarray(NAMED_COLORS[color_name.lower()], dtype=np.float32)
+
+
+def build_inverted_border_layer(
+    frame: np.ndarray,
+    outline_y: np.ndarray,
+    outline_x: np.ndarray,
+    source_offsets: list[np.ndarray],
+    x_offset: int,
+    y_offset: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    border_layer = np.zeros_like(frame)
+    border_mask = np.zeros_like(frame)
+
+    for y0, x0, candidates in zip(outline_y, outline_x, source_offsets):
+        border_y = int(y0) + y_offset
+        border_x = int(x0) + x_offset
+        if border_y < 0 or border_y >= frame.shape[0] or border_x < 0 or border_x >= frame.shape[1]:
+            continue
+
+        pick = candidates[rng.integers(len(candidates))]
+        source_y = border_y + int(pick[0])
+        source_x = border_x + int(pick[1])
+        if source_y < 0 or source_y >= frame.shape[0] or source_x < 0 or source_x >= frame.shape[1]:
+            continue
+
+        border_layer[border_y, border_x] = 1.0 - frame[source_y, source_x]
+        border_mask[border_y, border_x] = 1.0
+
+    return border_layer, border_mask
 
 
 def make_noise(
@@ -321,18 +433,38 @@ def compose_frame(
     text_noise: np.ndarray,
     text_mask: np.ndarray,
     outline_mask: np.ndarray,
+    border_style: str,
     border_color: np.ndarray,
+    outline_y: np.ndarray,
+    outline_x: np.ndarray,
+    outline_source_offsets: list[np.ndarray],
     background_offset: int,
     text_offset: int,
     width: int,
     height: int,
+    x_offset: int,
+    y_offset: int,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     background = background_noise[:, background_offset : background_offset + width]
     text_layer = text_noise[text_offset : text_offset + height, :]
     frame = background * (1.0 - text_mask) + text_layer * text_mask
     rgb = np.repeat(frame[:, :, None], 3, axis=2) * 255.0
     if np.any(outline_mask):
-        rgb = rgb * (1.0 - outline_mask[:, :, None]) + border_color * outline_mask[:, :, None]
+        if border_style == "invert":
+            border_layer, border_mask = build_inverted_border_layer(
+                frame,
+                outline_y,
+                outline_x,
+                outline_source_offsets,
+                x_offset,
+                y_offset,
+                rng,
+            )
+            border_rgb = np.repeat(border_layer[:, :, None], 3, axis=2) * 255.0
+            rgb = rgb * (1.0 - border_mask[:, :, None]) + border_rgb * border_mask[:, :, None]
+        else:
+            rgb = rgb * (1.0 - outline_mask[:, :, None]) + border_color * outline_mask[:, :, None]
     return np.clip(rgb, 0.0, 255.0).astype(np.uint8)
 
 
@@ -391,6 +523,7 @@ def build_animation(
     grain: int,
     feather: float,
     border_width: int,
+    border_style: str,
     border_color: str,
     text_drift: float,
     text_drift_speed: float,
@@ -401,7 +534,16 @@ def build_animation(
     text_image = render_text_image(text, width, height, font_size, font_path)
     base_text_mask = make_text_mask(text_image, feather)
     base_outline_mask = make_outline_mask(text_image, border_width)
-    border_rgb = resolve_border_color(border_color)
+    outline_y, outline_x, outline_source_offsets = build_outline_source_offsets(
+        text_image,
+        base_outline_mask,
+        border_width,
+    )
+    border_rgb = (
+        resolve_border_color(border_color)
+        if border_style == "solid"
+        else np.zeros(3, dtype=np.float32)
+    )
     text_noise = make_noise(rng, height, width, grain)
     text_noise = np.concatenate((text_noise, text_noise), axis=0)
 
@@ -421,11 +563,18 @@ def build_animation(
             text_noise,
             text_mask,
             outline_mask,
+            border_style,
             border_rgb,
+            outline_y,
+            outline_x,
+            outline_source_offsets,
             background_offset,
             text_offset,
             width,
             height,
+            x_offset,
+            y_offset,
+            rng,
         )
 
 
@@ -472,6 +621,7 @@ def main() -> None:
         grain=args.grain,
         feather=args.feather,
         border_width=args.border_width,
+        border_style=args.border_style,
         border_color=args.border_color,
         text_drift=args.text_drift,
         text_drift_speed=args.text_drift_speed,
