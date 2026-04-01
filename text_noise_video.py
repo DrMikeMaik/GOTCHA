@@ -466,6 +466,27 @@ def make_noise(
     return expanded[:height, :width]
 
 
+def snap_mask_to_grain(mask: np.ndarray, grain: int) -> np.ndarray:
+    if grain <= 1:
+        return mask
+
+    height, width = mask.shape
+    reduced_h = math.ceil(height / grain)
+    reduced_w = math.ceil(width / grain)
+    snapped_reduced = np.zeros((reduced_h, reduced_w), dtype=np.float32)
+
+    for cell_y in range(reduced_h):
+        y0 = cell_y * grain
+        y1 = min(height, y0 + grain)
+        for cell_x in range(reduced_w):
+            x0 = cell_x * grain
+            x1 = min(width, x0 + grain)
+            snapped_reduced[cell_y, cell_x] = float(np.max(mask[y0:y1, x0:x1]))
+
+    expanded = np.repeat(np.repeat(snapped_reduced, grain, axis=0), grain, axis=1)
+    return expanded[:height, :width]
+
+
 def compose_frame(
     background_noise: np.ndarray,
     text_noise: np.ndarray,
@@ -616,6 +637,8 @@ def build_animation(
     ):
         text_mask = shift_mask(base_text_mask, x_offset, y_offset)
         outline_mask = shift_mask(base_outline_mask, x_offset, y_offset)
+        if border_style == "motion":
+            outline_mask = snap_mask_to_grain(outline_mask, resolved_border_grain)
         yield compose_frame(
             background_noise,
             text_noise,
