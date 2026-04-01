@@ -39,6 +39,9 @@ DEFAULT_TEXT_DRIFT_SPEED = 0.16
 DEFAULT_BORDER_WIDTH = 0
 DEFAULT_BORDER_STYLE = "solid"
 DEFAULT_BORDER_COLOR = "black"
+DEFAULT_BORDER_SPEED = None
+DEFAULT_BORDER_GRAIN = None
+DEFAULT_BORDER_STRENGTH = 1.0
 DEFAULT_SEED = None
 
 NAMED_COLORS = {
@@ -52,7 +55,7 @@ NAMED_COLORS = {
     "magenta": (255, 0, 255),
 }
 
-BORDER_STYLES = ("solid", "invert")
+BORDER_STYLES = ("solid", "invert", "motion")
 
 FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -140,6 +143,24 @@ def parse_args() -> argparse.Namespace:
         help="Named outline color for solid borders. Defaults to black.",
     )
     parser.add_argument(
+        "--border-speed",
+        type=float,
+        default=DEFAULT_BORDER_SPEED,
+        help="Vertical speed for motion borders in pixels per frame. Defaults to --speed.",
+    )
+    parser.add_argument(
+        "--border-grain",
+        type=int,
+        default=DEFAULT_BORDER_GRAIN,
+        help="Noise block size for motion borders. Defaults to --grain.",
+    )
+    parser.add_argument(
+        "--border-strength",
+        type=float,
+        default=DEFAULT_BORDER_STRENGTH,
+        help="Blend strength for motion borders from 0.0 to 1.0.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=DEFAULT_SEED,
@@ -174,6 +195,12 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Text drift speed must be 0 or greater.")
     if args.border_width < 0:
         raise SystemExit("Border width must be 0 or greater.")
+    if args.border_speed is not None and args.border_speed < 0:
+        raise SystemExit("Border speed must be 0 or greater.")
+    if args.border_grain is not None and args.border_grain <= 0:
+        raise SystemExit("Border grain must be greater than 0.")
+    if not 0.0 <= args.border_strength <= 1.0:
+        raise SystemExit("Border strength must be between 0.0 and 1.0.")
     if args.border_style not in BORDER_STYLES:
         raise SystemExit(
             "Border style must be one of: "
@@ -415,6 +442,17 @@ def build_inverted_border_layer(
     return border_layer, border_mask
 
 
+def blend_border_layer(
+    rgb: np.ndarray,
+    border_layer: np.ndarray,
+    border_mask: np.ndarray,
+    strength: float,
+) -> np.ndarray:
+    alpha = np.clip(border_mask * strength, 0.0, 1.0)
+    border_rgb = np.repeat(border_layer[:, :, None], 3, axis=2) * 255.0
+    return rgb * (1.0 - alpha[:, :, None]) + border_rgb * alpha[:, :, None]
+
+
 def make_noise(
     rng: np.random.Generator,
     height: int,
@@ -431,15 +469,18 @@ def make_noise(
 def compose_frame(
     background_noise: np.ndarray,
     text_noise: np.ndarray,
+    border_noise: Optional[np.ndarray],
     text_mask: np.ndarray,
     outline_mask: np.ndarray,
     border_style: str,
     border_color: np.ndarray,
+    border_strength: float,
     outline_y: np.ndarray,
     outline_x: np.ndarray,
     outline_source_offsets: list[np.ndarray],
     background_offset: int,
     text_offset: int,
+    border_offset: int,
     width: int,
     height: int,
     x_offset: int,
@@ -461,8 +502,10 @@ def compose_frame(
                 y_offset,
                 rng,
             )
-            border_rgb = np.repeat(border_layer[:, :, None], 3, axis=2) * 255.0
-            rgb = rgb * (1.0 - border_mask[:, :, None]) + border_rgb * border_mask[:, :, None]
+            rgb = blend_border_layer(rgb, border_layer, border_mask, 1.0)
+        elif border_style == "motion" and border_noise is not None:
+            border_layer = border_noise[border_offset : border_offset + height, :]
+            rgb = blend_border_layer(rgb, border_layer, outline_mask, border_strength)
         else:
             rgb = rgb * (1.0 - outline_mask[:, :, None]) + border_color * outline_mask[:, :, None]
     return np.clip(rgb, 0.0, 255.0).astype(np.uint8)
@@ -491,6 +534,11 @@ def shift_mask(mask: np.ndarray, x_offset: int, y_offset: int) -> np.ndarray:
 def frame_offsets(frame_count: int, speed: float, width: int) -> Iterable[int]:
     for index in range(frame_count):
         yield int(round(index * speed)) % width
+
+
+def reverse_frame_offsets(frame_count: int, speed: float, width: int) -> Iterable[int]:
+    for index in range(frame_count):
+        yield (-int(round(index * speed))) % width
 
 
 def text_drift_offsets(
@@ -525,6 +573,9 @@ def build_animation(
     border_width: int,
     border_style: str,
     border_color: str,
+    border_speed: Optional[float],
+    border_grain: Optional[int],
+    border_strength: float,
     text_drift: float,
     text_drift_speed: float,
     seed: Optional[int],
@@ -544,16 +595,23 @@ def build_animation(
         if border_style == "solid"
         else np.zeros(3, dtype=np.float32)
     )
+    resolved_border_speed = speed if border_speed is None else border_speed
+    resolved_border_grain = grain if border_grain is None else border_grain
     text_noise = make_noise(rng, height, width, grain)
     text_noise = np.concatenate((text_noise, text_noise), axis=0)
+    border_noise = None
+    if border_style == "motion":
+        border_noise = make_noise(rng, height, width, resolved_border_grain)
+        border_noise = np.concatenate((border_noise, border_noise), axis=0)
 
     # Duplicate horizontally so each frame can read a contiguous sliding window.
     background_noise = make_noise(rng, height, width, grain)
     background_noise = np.concatenate((background_noise, background_noise), axis=1)
 
-    for background_offset, text_offset, (x_offset, y_offset) in zip(
+    for background_offset, text_offset, border_offset, (x_offset, y_offset) in zip(
         frame_offsets(frame_count, speed, width),
         frame_offsets(frame_count, speed, height),
+        reverse_frame_offsets(frame_count, resolved_border_speed, height),
         text_drift_offsets(frame_count, fps, text_drift, text_drift_speed),
     ):
         text_mask = shift_mask(base_text_mask, x_offset, y_offset)
@@ -561,15 +619,18 @@ def build_animation(
         yield compose_frame(
             background_noise,
             text_noise,
+            border_noise,
             text_mask,
             outline_mask,
             border_style,
             border_rgb,
+            border_strength,
             outline_y,
             outline_x,
             outline_source_offsets,
             background_offset,
             text_offset,
+            border_offset,
             width,
             height,
             x_offset,
@@ -623,6 +684,9 @@ def main() -> None:
         border_width=args.border_width,
         border_style=args.border_style,
         border_color=args.border_color,
+        border_speed=args.border_speed,
+        border_grain=args.border_grain,
+        border_strength=args.border_strength,
         text_drift=args.text_drift,
         text_drift_speed=args.text_drift_speed,
         seed=args.seed,
