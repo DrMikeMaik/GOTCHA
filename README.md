@@ -65,6 +65,97 @@ Useful flags:
 - `--text-drift` and `--text-drift-speed` to change how much the word wanders
 - `--font` to use a specific `.ttf` or `.otf` file
 
+## Attack bench
+
+There is now a companion script for trying reconstruction attacks against a generated clip and measuring how useful they are.
+
+It currently runs a small set of lightweight attacks:
+
+- `mean`: temporal average
+- `stddev`: temporal standard deviation
+- `delta_energy`: mean absolute frame-to-frame change
+- `pca1`: first principal dynamic component
+- `block_flow_angle`: block-matching motion-angle visualization
+
+Each run writes:
+
+- one PNG per algorithm
+- a `report.json` file with runtime and simple image metrics
+- a terminal summary table so you can compare methods quickly
+
+Example:
+
+```bash
+python attack_bench.py assets/secret.mp4 --output-dir attack_runs/secret
+```
+
+For faster iteration on large videos, start with a smaller analysis pass:
+
+```bash
+python attack_bench.py assets/secret.mp4 \
+  --downscale 0.25 \
+  --max-frames 90 \
+  --max-pairs 18 \
+  --output-dir attack_runs/quick
+```
+
+Short windows can be stronger than whole-clip aggregation because text drift smears the signal over time. To search for the best 20-frame slice:
+
+```bash
+python attack_bench.py assets/secret.mp4 \
+  --window-size 20 \
+  --window-stride 1 \
+  --include-full-window \
+  --output-dir attack_runs/windowed
+```
+
+The metrics in `report.json` are heuristic, not OCR accuracy scores. The useful signal is the combination of:
+
+- runtime
+- the saved attack image
+- contrast and edge metrics in the report
+
+That makes it easier to test whether a parameter tweak genuinely hardens the effect or just changes its look.
+
+## Attack sweep
+
+For generator-side hardening, there is also a parameter sweep tool that generates multiple variants, runs the attack set against each one, and ranks cases by recoverability.
+
+Unlike the standalone benchmark, the sweep knows the ground-truth text mask because it generated the clip itself. That means it can score each attack result against the expected text region instead of relying only on visual inspection.
+
+Example:
+
+```bash
+python attack_sweep.py \
+  --text TIMBER \
+  --grains 2,3,4 \
+  --feathers 0.75,1.25,2.0 \
+  --text-drifts 80,200,320 \
+  --text-drift-speeds 0.08,0.16 \
+  --output-dir sweep_runs/timber
+```
+
+The sweep writes:
+
+- `report.json` with per-case and per-attack metrics
+- `summary.csv` for quick sorting
+- preview images for the hardest and easiest cases by default
+
+You can also score short-window attacks during the sweep:
+
+```bash
+python attack_sweep.py \
+  --text TIMBER \
+  --grains 2,3,4 \
+  --text-drifts 80,200,320 \
+  --window-size 20 \
+  --window-stride 1 \
+  --include-full-window \
+  --output-dir sweep_runs/timber_windowed
+```
+
+Lower `best_recoverability_score` means the strongest configured attack had a harder time isolating the text, after considering the configured frame windows.
+
 ## Notes
 
 - This is intentionally small and self-contained.
