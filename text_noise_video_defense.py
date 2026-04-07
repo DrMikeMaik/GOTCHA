@@ -39,9 +39,11 @@ from text_noise_video import (
 DEFAULT_TILE_SIZE = 12
 DEFAULT_PALETTE = "-2,0;0,-2;2,0;0,2"
 DEFAULT_TEXT_VECTOR_INDEX = 1
-DEFAULT_PHASE_COUNT = 6
-DEFAULT_PHASE_HOLD = 2
-DEFAULT_ACTIVE_PHASES = 2
+DEFAULT_PHASE_COUNT = 4
+DEFAULT_PHASE_HOLD = 5
+DEFAULT_ACTIVE_PHASES = 3
+DEFAULT_BACKGROUND_CYCLE_STEP = 0
+DEFAULT_BACKGROUND_CYCLE_HOLD = 12
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,6 +94,18 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_ACTIVE_PHASES,
         help="How many text phases are active at once.",
     )
+    parser.add_argument(
+        "--background-cycle-step",
+        type=int,
+        default=DEFAULT_BACKGROUND_CYCLE_STEP,
+        help="How many palette slots background tiles advance per cycle. 0 disables cycling.",
+    )
+    parser.add_argument(
+        "--background-cycle-hold",
+        type=int,
+        default=DEFAULT_BACKGROUND_CYCLE_HOLD,
+        help="Frames to hold each background palette update.",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--font", default=None)
     parser.add_argument("--gif", action="store_true")
@@ -128,6 +142,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Phase hold must be greater than 0.")
     if args.active_phases <= 0:
         raise SystemExit("Active phases must be greater than 0.")
+    if args.background_cycle_hold <= 0:
+        raise SystemExit("Background cycle hold must be greater than 0.")
     if not args.text.strip():
         raise SystemExit("Text cannot be empty.")
 
@@ -195,10 +211,20 @@ def build_text_phase_groups(
 ) -> np.ndarray:
     groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
     active_tiles = np.argwhere(text_tile_mask)
+    if active_tiles.size == 0:
+        return groups
+
+    min_y, min_x = active_tiles.min(axis=0)
+    max_y, max_x = active_tiles.max(axis=0)
+    span_x = max(1, max_x - min_x + 1)
+    span_y = max(1, max_y - min_y + 1)
+    band_width = max(1.0, (span_x + 0.45 * span_y) / phase_count)
+
     for tile_y, tile_x in active_tiles:
-        # A diagonal hash scatters nearby stroke tiles across phases so a short
-        # window only reveals fragments of each glyph.
-        groups[tile_y, tile_x] = (tile_x * 3 + tile_y * 2) % phase_count
+        # Use broad diagonal bands so each phase keeps larger, more legible
+        # stroke fragments while still avoiding one coherent full-word mask.
+        projected = (tile_x - min_x) + 0.45 * (tile_y - min_y)
+        groups[tile_y, tile_x] = int(np.floor(projected / band_width)) % phase_count
     return groups
 
 
@@ -252,7 +278,6 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     tiles_y = (args.height + args.tile_size - 1) // args.tile_size
     tiles_x = (args.width + args.tile_size - 1) // args.tile_size
     base_tile_labels = rng.integers(0, len(palette), size=(tiles_y, tiles_x), endpoint=False)
-    background_phase_offsets = rng.integers(0, len(palette), size=(tiles_y, tiles_x), endpoint=False)
     background_phase_steps = rng.choice(np.asarray([-1, 1], dtype=np.int16), size=(tiles_y, tiles_x))
 
     text_image = render_text_image(args.text, args.width, args.height, args.font_size, args.font)
@@ -286,12 +311,13 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
             shifted_phase_groups[~shifted_group_tiles] = -1
 
         phase_index = (frame_index // args.phase_hold) % args.phase_count
-        background_phase_index = frame_index // args.phase_hold
-        background_tile_labels = (
-            base_tile_labels
-            + background_phase_offsets
-            + (background_phase_index * background_phase_steps)
-        ) % len(palette)
+        background_tile_labels = np.array(base_tile_labels, copy=True)
+        if args.background_cycle_step != 0:
+            background_phase_index = frame_index // args.background_cycle_hold
+            background_tile_labels = (
+                background_tile_labels
+                + (background_phase_index * background_phase_steps * args.background_cycle_step)
+            ) % len(palette)
         frame_tile_labels = apply_phase_overrides(
             base_tile_labels=background_tile_labels,
             phase_groups=shifted_phase_groups,
