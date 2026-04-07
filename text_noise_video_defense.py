@@ -10,6 +10,7 @@ of a single text-shaped motion partition.
 from __future__ import annotations
 
 import argparse
+import secrets
 from pathlib import Path
 from typing import Iterable
 
@@ -113,6 +114,11 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PHASE_MODE,
         help="How to divide the text into reveal groups.",
     )
+    parser.add_argument(
+        "--random-digits",
+        action="store_true",
+        help="Generate a random 4-digit secret internally instead of using --text.",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--font", default=None)
     parser.add_argument("--gif", action="store_true")
@@ -151,7 +157,7 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Active phases must be greater than 0.")
     if args.background_cycle_hold <= 0:
         raise SystemExit("Background cycle hold must be greater than 0.")
-    if not args.text.strip():
+    if not args.random_digits and not args.text.strip():
         raise SystemExit("Text cannot be empty.")
 
 
@@ -169,6 +175,12 @@ def parse_palette(raw: str) -> list[tuple[int, int]]:
     if not vectors:
         raise SystemExit("Palette must contain at least one motion vector.")
     return vectors
+
+
+def resolve_render_text(args: argparse.Namespace) -> str:
+    if args.random_digits:
+        return f"{secrets.randbelow(10000):04d}"
+    return args.text
 
 
 def text_drift_offsets(
@@ -406,6 +418,7 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
 def main() -> None:
     args = parse_args()
     output_path = resolve_output_path(args.output, args.gif)
+    args.text = resolve_render_text(args)
     frames = build_animation(args)
     write_animation(frames, output_path, args.fps, args.gif)
     frame_count = max(1, int(round(args.duration * args.fps)))

@@ -69,6 +69,7 @@ with a different construction:
 - local motion comes from a shared palette across the whole frame
 - the text is split into phase-sliced groups instead of one coherent motion region
 - background tiles also cycle through the same palette, so text tiles do not own a unique vector class
+- `--random-digits` generates a hidden 4-digit secret internally without printing it
 
 Useful flags:
 
