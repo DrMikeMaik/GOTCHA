@@ -2,9 +2,9 @@
 """Prototype defense generator for GOTCHA.
 
 This variant keeps the original generator intact and experiments with a more
-attack-resistant construction. The first version renders the frame from a
-shared palette of local motion fields instead of one global background motion
-plus one global text motion.
+attack-resistant construction. It renders each frame from a shared palette of
+local motion fields and reveals text through phase-sliced stroke groups instead
+of a single text-shaped motion partition.
 """
 
 from __future__ import annotations
@@ -39,6 +39,9 @@ from text_noise_video import (
 DEFAULT_TILE_SIZE = 12
 DEFAULT_PALETTE = "-2,0;0,-2;2,0;0,2"
 DEFAULT_TEXT_VECTOR_INDEX = 1
+DEFAULT_PHASE_COUNT = 6
+DEFAULT_PHASE_HOLD = 2
+DEFAULT_ACTIVE_PHASES = 2
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,7 +72,25 @@ def parse_args() -> argparse.Namespace:
         "--text-vector-index",
         type=int,
         default=DEFAULT_TEXT_VECTOR_INDEX,
-        help="Palette index used for text tiles in the scaffold version.",
+        help="Base palette index used to seed the text-phase vector cycle.",
+    )
+    parser.add_argument(
+        "--phase-count",
+        type=int,
+        default=DEFAULT_PHASE_COUNT,
+        help="Number of spatial text groups to cycle through.",
+    )
+    parser.add_argument(
+        "--phase-hold",
+        type=int,
+        default=DEFAULT_PHASE_HOLD,
+        help="Frames to hold each active text phase before advancing.",
+    )
+    parser.add_argument(
+        "--active-phases",
+        type=int,
+        default=DEFAULT_ACTIVE_PHASES,
+        help="How many text phases are active at once.",
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--font", default=None)
@@ -101,6 +122,12 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Text drift speed must be 0 or greater.")
     if args.tile_size <= 0:
         raise SystemExit("Tile size must be greater than 0.")
+    if args.phase_count <= 0:
+        raise SystemExit("Phase count must be greater than 0.")
+    if args.phase_hold <= 0:
+        raise SystemExit("Phase hold must be greater than 0.")
+    if args.active_phases <= 0:
+        raise SystemExit("Active phases must be greater than 0.")
     if not args.text.strip():
         raise SystemExit("Text cannot be empty.")
 
@@ -162,6 +189,38 @@ def tile_mask_from_pixel_mask(mask: np.ndarray, tile_size: int) -> np.ndarray:
     return tile_mask
 
 
+def build_text_phase_groups(
+    text_tile_mask: np.ndarray,
+    phase_count: int,
+) -> np.ndarray:
+    groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
+    active_tiles = np.argwhere(text_tile_mask)
+    for tile_y, tile_x in active_tiles:
+        # A diagonal hash scatters nearby stroke tiles across phases so a short
+        # window only reveals fragments of each glyph.
+        groups[tile_y, tile_x] = (tile_x * 3 + tile_y * 2) % phase_count
+    return groups
+
+
+def apply_phase_overrides(
+    base_tile_labels: np.ndarray,
+    phase_groups: np.ndarray,
+    phase_count: int,
+    palette_size: int,
+    phase_index: int,
+    active_phases: int,
+    text_vector_index: int,
+) -> np.ndarray:
+    frame_tile_labels = np.array(base_tile_labels, copy=True)
+    for offset in range(active_phases):
+        group_index = (phase_index + offset) % phase_count
+        group_mask = phase_groups == group_index
+        if not np.any(group_mask):
+            continue
+        frame_tile_labels[group_mask] = (text_vector_index + group_index) % palette_size
+    return frame_tile_labels
+
+
 def shifted_field(field: np.ndarray, dx: int, dy: int, frame_index: int) -> np.ndarray:
     return np.roll(field, shift=(dy * frame_index, dx * frame_index), axis=(0, 1))
 
@@ -193,17 +252,55 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     tiles_y = (args.height + args.tile_size - 1) // args.tile_size
     tiles_x = (args.width + args.tile_size - 1) // args.tile_size
     base_tile_labels = rng.integers(0, len(palette), size=(tiles_y, tiles_x), endpoint=False)
+    background_phase_offsets = rng.integers(0, len(palette), size=(tiles_y, tiles_x), endpoint=False)
+    background_phase_steps = rng.choice(np.asarray([-1, 1], dtype=np.int16), size=(tiles_y, tiles_x))
 
     text_image = render_text_image(args.text, args.width, args.height, args.font_size, args.font)
     base_text_mask = make_text_mask(text_image, args.feather)
+    base_text_tile_mask = tile_mask_from_pixel_mask(base_text_mask, args.tile_size)
+    text_phase_groups = build_text_phase_groups(base_text_tile_mask, args.phase_count)
 
     for frame_index, (x_offset, y_offset) in enumerate(
         text_drift_offsets(frame_count, args.fps, args.text_drift, args.text_drift_speed)
     ):
-        shifted_text_mask = shift_mask(base_text_mask, x_offset, y_offset)
-        text_tile_mask = tile_mask_from_pixel_mask(shifted_text_mask, args.tile_size)
-        frame_tile_labels = np.array(base_tile_labels, copy=True)
-        frame_tile_labels[text_tile_mask] = args.text_vector_index
+        shifted_phase_groups = np.full_like(text_phase_groups, -1)
+        if x_offset == 0 and y_offset == 0:
+            shifted_phase_groups = text_phase_groups
+        else:
+            expanded_phase_groups = expand_tile_map(
+                np.where(text_phase_groups >= 0, text_phase_groups + 1, 0),
+                args.tile_size,
+                args.height,
+                args.width,
+            )
+            shifted_group_pixels = shift_mask(expanded_phase_groups.astype(np.float32), x_offset, y_offset)
+            shifted_group_tiles = tile_mask_from_pixel_mask(shifted_group_pixels, args.tile_size)
+            for group_index in range(args.phase_count):
+                group_pixels = shift_mask(
+                    expand_tile_map((text_phase_groups == group_index).astype(np.float32), args.tile_size, args.height, args.width),
+                    x_offset,
+                    y_offset,
+                )
+                group_tiles = tile_mask_from_pixel_mask(group_pixels, args.tile_size)
+                shifted_phase_groups[group_tiles] = group_index
+            shifted_phase_groups[~shifted_group_tiles] = -1
+
+        phase_index = (frame_index // args.phase_hold) % args.phase_count
+        background_phase_index = frame_index // args.phase_hold
+        background_tile_labels = (
+            base_tile_labels
+            + background_phase_offsets
+            + (background_phase_index * background_phase_steps)
+        ) % len(palette)
+        frame_tile_labels = apply_phase_overrides(
+            base_tile_labels=background_tile_labels,
+            phase_groups=shifted_phase_groups,
+            phase_count=args.phase_count,
+            palette_size=len(palette),
+            phase_index=phase_index,
+            active_phases=min(args.active_phases, args.phase_count),
+            text_vector_index=args.text_vector_index,
+        )
         frame_label_map = expand_tile_map(frame_tile_labels, args.tile_size, args.height, args.width)
         shifted_fields = np.stack(
             [shifted_field(field_stack[index], dx, dy, frame_index) for index, (dx, dy) in enumerate(palette)],
