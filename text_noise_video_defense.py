@@ -44,6 +44,7 @@ DEFAULT_PHASE_HOLD = 5
 DEFAULT_ACTIVE_PHASES = 3
 DEFAULT_BACKGROUND_CYCLE_STEP = 0
 DEFAULT_BACKGROUND_CYCLE_HOLD = 12
+DEFAULT_PHASE_MODE = "components"
 
 
 def parse_args() -> argparse.Namespace:
@@ -105,6 +106,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_BACKGROUND_CYCLE_HOLD,
         help="Frames to hold each background palette update.",
+    )
+    parser.add_argument(
+        "--phase-mode",
+        choices=("bands", "components"),
+        default=DEFAULT_PHASE_MODE,
+        help="How to divide the text into reveal groups.",
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--font", default=None)
@@ -208,7 +215,11 @@ def tile_mask_from_pixel_mask(mask: np.ndarray, tile_size: int) -> np.ndarray:
 def build_text_phase_groups(
     text_tile_mask: np.ndarray,
     phase_count: int,
+    phase_mode: str,
 ) -> np.ndarray:
+    if phase_mode == "components":
+        return build_component_phase_groups(text_tile_mask, phase_count)
+
     groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
     active_tiles = np.argwhere(text_tile_mask)
     if active_tiles.size == 0:
@@ -225,6 +236,57 @@ def build_text_phase_groups(
         # stroke fragments while still avoiding one coherent full-word mask.
         projected = (tile_x - min_x) + 0.45 * (tile_y - min_y)
         groups[tile_y, tile_x] = int(np.floor(projected / band_width)) % phase_count
+    return groups
+
+
+def build_component_phase_groups(
+    text_tile_mask: np.ndarray,
+    phase_count: int,
+) -> np.ndarray:
+    groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
+    visited = np.zeros(text_tile_mask.shape, dtype=bool)
+    components: list[list[tuple[int, int]]] = []
+    neighbors = (
+        (-1, -1), (-1, 0), (-1, 1),
+        (0, -1),           (0, 1),
+        (1, -1),  (1, 0),  (1, 1),
+    )
+
+    height, width = text_tile_mask.shape
+    for tile_y in range(height):
+        for tile_x in range(width):
+            if visited[tile_y, tile_x] or not text_tile_mask[tile_y, tile_x]:
+                continue
+            stack = [(tile_y, tile_x)]
+            visited[tile_y, tile_x] = True
+            component: list[tuple[int, int]] = []
+            while stack:
+                cy, cx = stack.pop()
+                component.append((cy, cx))
+                for dy, dx in neighbors:
+                    ny = cy + dy
+                    nx = cx + dx
+                    if ny < 0 or ny >= height or nx < 0 or nx >= width:
+                        continue
+                    if visited[ny, nx] or not text_tile_mask[ny, nx]:
+                        continue
+                    visited[ny, nx] = True
+                    stack.append((ny, nx))
+            components.append(component)
+
+    # Assign phases in reading order so the reveal tracks whole letters instead
+    # of diagonal slices through multiple glyphs.
+    ordered_components = sorted(
+        components,
+        key=lambda component: (
+            min(tile_y for tile_y, _ in component),
+            min(tile_x for _, tile_x in component),
+        ),
+    )
+    for index, component in enumerate(ordered_components):
+        phase_group = index % phase_count
+        for tile_y, tile_x in component:
+            groups[tile_y, tile_x] = phase_group
     return groups
 
 
@@ -283,7 +345,11 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     text_image = render_text_image(args.text, args.width, args.height, args.font_size, args.font)
     base_text_mask = make_text_mask(text_image, args.feather)
     base_text_tile_mask = tile_mask_from_pixel_mask(base_text_mask, args.tile_size)
-    text_phase_groups = build_text_phase_groups(base_text_tile_mask, args.phase_count)
+    text_phase_groups = build_text_phase_groups(
+        base_text_tile_mask,
+        args.phase_count,
+        args.phase_mode,
+    )
 
     for frame_index, (x_offset, y_offset) in enumerate(
         text_drift_offsets(frame_count, args.fps, args.text_drift, args.text_drift_speed)
