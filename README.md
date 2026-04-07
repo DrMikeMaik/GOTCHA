@@ -57,6 +57,19 @@ See all options with:
 python text_noise_video.py --help
 ```
 
+Defense prototype:
+
+```bash
+poetry run python text_noise_video_defense.py --text TIMBER --output timber_defense.mp4
+```
+
+This prototype keeps the attack branch baseline generator intact and experiments
+with a different construction:
+
+- local motion comes from a shared palette across the whole frame
+- the text is split into phase-sliced groups instead of one coherent motion region
+- background tiles also cycle through the same palette, so text tiles do not own a unique vector class
+
 Useful flags:
 
 - `--gif` to write a GIF instead of MP4
