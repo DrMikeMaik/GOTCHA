@@ -63,7 +63,38 @@ Useful flags:
 - `--seed` for reproducible output
 - `--grain` to make the noise coarser or finer
 - `--text-drift` and `--text-drift-speed` to change how much the word wanders
+- `--border-width` to add an outline around the word
+- `--border-style` to choose `solid`, per-pixel `invert`, or opposite-flow `motion` border rendering
+- `--border-color` to choose a simple named outline color such as `black` or `red` for `solid` borders only
+- `--border-speed`, `--border-grain`, and `--border-strength` to tune `motion` borders
 - `--font` to use a specific `.ttf` or `.otf` file
+
+Border modes:
+
+- `solid`: draws a flat-color outline using `--border-color`
+- `invert`: draws an outline where each border pixel is inverted from nearby text pixels
+- `motion`: draws the outline from a third noise field that moves vertically opposite to the text layer
+
+Examples:
+
+```bash
+# Solid black border
+poetry run python text_noise_video.py --text TIMBER --border-width 6 --border-style solid --border-color black --output timber_solid_border.mp4
+
+# Per-pixel inverted border
+poetry run python text_noise_video.py --text TIMBER --border-width 1 --border-style invert --output timber_invert_border.mp4
+
+# Motion border using a third noise field
+poetry run python text_noise_video.py --text TIMBER --grain 3 --border-width 2 --border-style motion --border-speed 3 --border-grain 3 --border-strength 1.0 --output timber_motion_border.mp4
+```
+
+Motion border notes:
+
+- The motion border uses its own vertical noise field, moving opposite to the text noise.
+- `--border-speed` defaults to `--speed` if omitted.
+- `--border-grain` defaults to `--grain` if omitted.
+- For the cleanest paused frames, keep `--border-grain` equal to `--grain` so the border stays on the same noise grid as the rest of the image.
+- `--border-strength` controls how strongly the border layer replaces the underlying frame.
 
 ## Attack bench
 

@@ -199,8 +199,10 @@ cython_debug/
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
 #  refer to https://docs.cursor.com/context/ignore-files
 
-# Local desktop and experiment outputs
+# macOS Finder metadata
 .DS_Store
+
+# Local experiment outputs
 tmp/
 .cursorignore
 .cursorindexingignore
