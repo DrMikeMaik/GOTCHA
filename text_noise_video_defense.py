@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Prototype defense generator for GOTCHA.
+"""Defense-oriented generator for GOTCHA.
 
-This variant keeps the original generator intact and experiments with a more
-attack-resistant construction. It renders each frame from a shared palette of
-local motion fields and reveals text through phase-sliced stroke groups instead
-of a single text-shaped motion partition.
+This variant keeps the original generator intact and explores a different
+tradeoff: preserve human readability while making simple reconstruction attacks
+less direct. Frames are assembled from a shared palette of local motion fields,
+and the text is revealed in phase-sliced groups instead of one coherent
+text-shaped motion partition.
 """
 
 from __future__ import annotations
@@ -183,6 +184,10 @@ def resolve_render_text(args: argparse.Namespace) -> str:
     return args.text
 
 
+def frame_count_from_args(args: argparse.Namespace) -> int:
+    return max(1, int(round(args.duration * args.fps)))
+
+
 def text_drift_offsets(
     frame_count: int,
     fps: int,
@@ -343,8 +348,62 @@ def compose_palette_frame(
     return np.take_along_axis(shifted_fields, label_map[None, :, :], axis=0)[0]
 
 
+def shift_phase_groups(
+    phase_groups: np.ndarray,
+    phase_count: int,
+    tile_size: int,
+    height: int,
+    width: int,
+    x_offset: int,
+    y_offset: int,
+) -> np.ndarray:
+    if x_offset == 0 and y_offset == 0:
+        return phase_groups
+
+    shifted_phase_groups = np.full_like(phase_groups, -1)
+    expanded_phase_groups = expand_tile_map(
+        np.where(phase_groups >= 0, phase_groups + 1, 0),
+        tile_size,
+        height,
+        width,
+    )
+    shifted_group_pixels = shift_mask(expanded_phase_groups.astype(np.float32), x_offset, y_offset)
+    shifted_group_tiles = tile_mask_from_pixel_mask(shifted_group_pixels, tile_size)
+
+    for group_index in range(phase_count):
+        group_pixels = shift_mask(
+            expand_tile_map((phase_groups == group_index).astype(np.float32), tile_size, height, width),
+            x_offset,
+            y_offset,
+        )
+        group_tiles = tile_mask_from_pixel_mask(group_pixels, tile_size)
+        shifted_phase_groups[group_tiles] = group_index
+
+    shifted_phase_groups[~shifted_group_tiles] = -1
+    return shifted_phase_groups
+
+
+def resolve_background_tile_labels(
+    base_tile_labels: np.ndarray,
+    background_phase_steps: np.ndarray,
+    palette_size: int,
+    frame_index: int,
+    cycle_step: int,
+    cycle_hold: int,
+) -> np.ndarray:
+    background_tile_labels = np.array(base_tile_labels, copy=True)
+    if cycle_step == 0:
+        return background_tile_labels
+
+    background_phase_index = frame_index // cycle_hold
+    return (
+        background_tile_labels
+        + (background_phase_index * background_phase_steps * cycle_step)
+    ) % palette_size
+
+
 def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
-    frame_count = max(1, int(round(args.duration * args.fps)))
+    frame_count = frame_count_from_args(args)
     rng = np.random.default_rng(args.seed)
     palette = args.palette_vectors
     field_stack = build_palette_fields(rng, args.height, args.width, args.grain, len(palette))
@@ -366,36 +425,25 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     for frame_index, (x_offset, y_offset) in enumerate(
         text_drift_offsets(frame_count, args.fps, args.text_drift, args.text_drift_speed)
     ):
-        shifted_phase_groups = np.full_like(text_phase_groups, -1)
-        if x_offset == 0 and y_offset == 0:
-            shifted_phase_groups = text_phase_groups
-        else:
-            expanded_phase_groups = expand_tile_map(
-                np.where(text_phase_groups >= 0, text_phase_groups + 1, 0),
-                args.tile_size,
-                args.height,
-                args.width,
-            )
-            shifted_group_pixels = shift_mask(expanded_phase_groups.astype(np.float32), x_offset, y_offset)
-            shifted_group_tiles = tile_mask_from_pixel_mask(shifted_group_pixels, args.tile_size)
-            for group_index in range(args.phase_count):
-                group_pixels = shift_mask(
-                    expand_tile_map((text_phase_groups == group_index).astype(np.float32), args.tile_size, args.height, args.width),
-                    x_offset,
-                    y_offset,
-                )
-                group_tiles = tile_mask_from_pixel_mask(group_pixels, args.tile_size)
-                shifted_phase_groups[group_tiles] = group_index
-            shifted_phase_groups[~shifted_group_tiles] = -1
+        shifted_phase_groups = shift_phase_groups(
+            phase_groups=text_phase_groups,
+            phase_count=args.phase_count,
+            tile_size=args.tile_size,
+            height=args.height,
+            width=args.width,
+            x_offset=x_offset,
+            y_offset=y_offset,
+        )
 
         phase_index = (frame_index // args.phase_hold) % args.phase_count
-        background_tile_labels = np.array(base_tile_labels, copy=True)
-        if args.background_cycle_step != 0:
-            background_phase_index = frame_index // args.background_cycle_hold
-            background_tile_labels = (
-                background_tile_labels
-                + (background_phase_index * background_phase_steps * args.background_cycle_step)
-            ) % len(palette)
+        background_tile_labels = resolve_background_tile_labels(
+            base_tile_labels=base_tile_labels,
+            background_phase_steps=background_phase_steps,
+            palette_size=len(palette),
+            frame_index=frame_index,
+            cycle_step=args.background_cycle_step,
+            cycle_hold=args.background_cycle_hold,
+        )
         frame_tile_labels = apply_phase_overrides(
             base_tile_labels=background_tile_labels,
             phase_groups=shifted_phase_groups,
@@ -421,7 +469,7 @@ def main() -> None:
     args.text = resolve_render_text(args)
     frames = build_animation(args)
     write_animation(frames, output_path, args.fps, args.gif)
-    frame_count = max(1, int(round(args.duration * args.fps)))
+    frame_count = frame_count_from_args(args)
     print(f"Wrote {frame_count} frames to {output_path}")
 
 
