@@ -97,18 +97,22 @@ The defense generator differs from the baseline in three main ways:
 - local motion comes from a shared palette across the whole frame
 - the text is split into phase-sliced reveal groups instead of one coherent
   motion region
-- the current best variant groups text by connected components rather than by
-  simple diagonal slices
+- the current variants can group text by whole components or by upper/lower
+  component halves rather than by simple diagonal slices
 
 Useful defense flags:
 
 - `--random-digits` to generate a hidden 4-digit code internally
 - `--grain` to control the size of the moving noise chunks
-- `--phase-mode` to choose between `components` and `bands`
+- `--phase-mode` to choose between `components`, `component-halves`, and `bands`
 - `--phase-count`, `--active-phases`, `--phase-hold` to tune how much of the
   text is visible at once
 - `--background-cycle-step` and `--background-cycle-hold` to add or disable
   background motion cycling
+
+`component-halves` is the most directly adversarial to two-frame attacks: each
+glyph is split into upper and lower halves and the generator refuses settings
+that would allow both halves to be active at the same time.
 
 ## Attack Tooling
 
