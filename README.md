@@ -121,8 +121,8 @@ pattern less predictable, rather than slicing glyphs into smaller fragments.
 
 ### Attack Bench
 
-`attack_bench.py` runs lightweight reconstruction attacks against a clip and
-records output images, timings, and simple image metrics.
+`attack_bench.py` runs reconstruction attacks against a clip and records output
+images, timings, and simple image metrics.
 
 Algorithms currently included:
 
@@ -131,6 +131,10 @@ Algorithms currently included:
 - `delta_energy`
 - `pca1`
 - `block_flow_angle`
+
+In practice, only `block_flow_angle` has been a serious recovery path in this
+repo. The other algorithms are still available as diagnostics, but they should
+not be treated as the main threat model.
 
 Example:
 
@@ -150,8 +154,11 @@ python attack_bench.py assets/secret.mp4 \
 
 ### Attack Sweep
 
-`attack_sweep.py` generates many variants, runs the attack set, and ranks them
-by recoverability.
+`attack_sweep.py` generates many variants, runs the configured attack set, and
+ranks them by recoverability.
+
+It now defaults to `block_flow_angle` only, because that is the attacker model
+that actually mattered in testing.
 
 Example:
 
@@ -168,57 +175,58 @@ python attack_sweep.py \
 
 ## What We Learned
 
-The baseline generator is easy for humans, but it leaks a stable motion
-partition. A tuned block-flow attack can recover readable structure from as few
-as two frames.
+The baseline generator is easy for humans because it leaks a stable motion
+partition. A tuned two-frame block-flow attack can recover readable structure
+from as few as two frames.
 
-The defense generator is harder to recover with generic attacks, but the real
-attacker model is more specific:
+The weaker attacks mostly failed. `mean`, `stddev`, `delta_energy`, and `pca1`
+were useful as diagnostics, but not as practical recovery tools.
 
-- the strongest attack was not `mean`, `stddev`, `delta_energy`, or `pca1`
-- the strongest attack was tuned two-frame block-flow over many candidate frame
-  pairs
-- recovery got much better when multiple top pair artifacts were compared and
-  combined
+The real attacker model is:
+
+- tuned two-frame `block_flow_angle`
+- small blocks and short frame gaps
+- scanning many candidate frame pairs
+- combining multiple top pair artifacts when a single image is incomplete
 
 This image shows how clean the baseline leak can be when motion labels are
 recovered:
 
 ![Baseline block-flow labels](assets/readme/blockflow_motion_labels.png)
 
-This montage shows the harder, more fragmented evidence produced by the defense
-variant during a blind two-frame attack:
+This montage shows the fragmented evidence produced by the defense variant
+during a blind two-frame attack:
 
 ![Blind pair montage](assets/readme/blind_pair_montage.png)
 
 ### Timing Takeaway
 
-On the current defense variant:
+On the better defense variants we tested:
 
 - humans typically read a 4-digit code in about `10-20s`
-- the completed built-in attack suite finished quickly, but did not directly
-  yield the answer
-- the strongest practical recovery path was a targeted two-frame scan plus
-  manual aggregation of partial clues
+- the generic attack suite mostly failed to recover the answer directly
+- the strongest practical recovery path was still a targeted two-frame
+  `block_flow_angle` scan plus aggregation of partial clues
 - one blind recovery pipeline took about `95s` end-to-end and still guessed the
   code incorrectly on the first attempt
 
-That is the real result of the project: not “machines cannot solve it,” but
-“machines need a more specialized, slower, and less reliable pipeline than a
-human viewer.”
+That is useful, but it is not the same as saying the defenses really stopped
+bots. The latest variants mostly filtered out weak attacks. They did not
+meaningfully defeat the only attack that consistently worked.
 
 ## Honest Positioning
 
 This project is best described as:
 
 - human-friendly relative to naive machine perception
-- attackable by tuned computer-vision pipelines
+- still attackable by tuned computer-vision pipelines
 - useful as a perception experiment, not as a security guarantee
 
 The honest claim is:
 
 > Humans read the code directly from motion; machines can recover it too, but
-> only with a much more specialized, slower, and less reliable process.
+> only with a more specialized pipeline, centered on tuned two-frame block
+> matching rather than generic frame statistics.
 
 ## Repo Layout
 
