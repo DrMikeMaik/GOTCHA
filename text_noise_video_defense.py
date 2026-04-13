@@ -111,7 +111,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--phase-mode",
-        choices=("bands", "components"),
+        choices=("bands", "components", "component-halves"),
         default=DEFAULT_PHASE_MODE,
         help="How to divide the text into reveal groups.",
     )
@@ -156,6 +156,13 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Phase hold must be greater than 0.")
     if args.active_phases <= 0:
         raise SystemExit("Active phases must be greater than 0.")
+    if args.phase_mode == "component-halves":
+        if args.phase_count < 2:
+            raise SystemExit("component-halves mode requires --phase-count of at least 2.")
+        if args.active_phases > args.phase_count // 2:
+            raise SystemExit(
+                "component-halves mode requires --active-phases to be at most half of --phase-count."
+            )
     if args.background_cycle_hold <= 0:
         raise SystemExit("Background cycle hold must be greater than 0.")
     if not args.random_digits and not args.text.strip():
@@ -236,6 +243,8 @@ def build_text_phase_groups(
 ) -> np.ndarray:
     if phase_mode == "components":
         return build_component_phase_groups(text_tile_mask, phase_count)
+    if phase_mode == "component-halves":
+        return build_component_half_phase_groups(text_tile_mask, phase_count)
 
     groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
     active_tiles = np.argwhere(text_tile_mask)
@@ -256,11 +265,9 @@ def build_text_phase_groups(
     return groups
 
 
-def build_component_phase_groups(
+def collect_text_components(
     text_tile_mask: np.ndarray,
-    phase_count: int,
-) -> np.ndarray:
-    groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
+) -> list[list[tuple[int, int]]]:
     visited = np.zeros(text_tile_mask.shape, dtype=bool)
     components: list[list[tuple[int, int]]] = []
     neighbors = (
@@ -290,20 +297,54 @@ def build_component_phase_groups(
                     visited[ny, nx] = True
                     stack.append((ny, nx))
             components.append(component)
+    return components
 
+
+def order_text_components(
+    components: list[list[tuple[int, int]]],
+) -> list[list[tuple[int, int]]]:
     # Assign phases in reading order so the reveal tracks whole letters instead
     # of diagonal slices through multiple glyphs.
-    ordered_components = sorted(
+    return sorted(
         components,
         key=lambda component: (
             min(tile_y for tile_y, _ in component),
             min(tile_x for _, tile_x in component),
         ),
     )
+
+
+def build_component_phase_groups(
+    text_tile_mask: np.ndarray,
+    phase_count: int,
+) -> np.ndarray:
+    groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
+    ordered_components = order_text_components(collect_text_components(text_tile_mask))
     for index, component in enumerate(ordered_components):
         phase_group = index % phase_count
         for tile_y, tile_x in component:
             groups[tile_y, tile_x] = phase_group
+    return groups
+
+
+def build_component_half_phase_groups(
+    text_tile_mask: np.ndarray,
+    phase_count: int,
+) -> np.ndarray:
+    groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
+    ordered_components = order_text_components(collect_text_components(text_tile_mask))
+    phase_separation = phase_count // 2
+
+    for index, component in enumerate(ordered_components):
+        top_group = index % phase_separation
+        bottom_group = top_group + phase_separation
+        min_tile_y = min(tile_y for tile_y, _ in component)
+        max_tile_y = max(tile_y for tile_y, _ in component)
+        split_tile_y = (min_tile_y + max_tile_y) / 2.0
+
+        for tile_y, tile_x in component:
+            group = top_group if tile_y <= split_tile_y else bottom_group
+            groups[tile_y, tile_x] = group
     return groups
 
 
