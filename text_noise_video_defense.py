@@ -11,6 +11,7 @@ text-shaped motion partition.
 from __future__ import annotations
 
 import argparse
+import itertools
 import secrets
 from pathlib import Path
 from typing import Iterable
@@ -47,6 +48,8 @@ DEFAULT_ACTIVE_PHASES = 3
 DEFAULT_BACKGROUND_CYCLE_STEP = 0
 DEFAULT_BACKGROUND_CYCLE_HOLD = 12
 DEFAULT_PHASE_MODE = "components"
+DEFAULT_SCHEDULE_MODE = "randomized"
+DEFAULT_SCHEDULE_SPAN = 3
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,9 +114,21 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--phase-mode",
-        choices=("bands", "components", "component-halves"),
+        choices=("bands", "components"),
         default=DEFAULT_PHASE_MODE,
         help="How to divide the text into reveal groups.",
+    )
+    parser.add_argument(
+        "--schedule-mode",
+        choices=("cycle", "randomized"),
+        default=DEFAULT_SCHEDULE_MODE,
+        help="How active text groups are scheduled over time.",
+    )
+    parser.add_argument(
+        "--schedule-span",
+        type=int,
+        default=DEFAULT_SCHEDULE_SPAN,
+        help="How many phase-hold steps a randomized reveal subset tends to persist.",
     )
     parser.add_argument(
         "--random-digits",
@@ -156,13 +171,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Phase hold must be greater than 0.")
     if args.active_phases <= 0:
         raise SystemExit("Active phases must be greater than 0.")
-    if args.phase_mode == "component-halves":
-        if args.phase_count < 2:
-            raise SystemExit("component-halves mode requires --phase-count of at least 2.")
-        if args.active_phases > args.phase_count // 2:
-            raise SystemExit(
-                "component-halves mode requires --active-phases to be at most half of --phase-count."
-            )
+    if args.schedule_span <= 0:
+        raise SystemExit("Schedule span must be greater than 0.")
     if args.background_cycle_hold <= 0:
         raise SystemExit("Background cycle hold must be greater than 0.")
     if not args.random_digits and not args.text.strip():
@@ -243,8 +253,6 @@ def build_text_phase_groups(
 ) -> np.ndarray:
     if phase_mode == "components":
         return build_component_phase_groups(text_tile_mask, phase_count)
-    if phase_mode == "component-halves":
-        return build_component_half_phase_groups(text_tile_mask, phase_count)
 
     groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
     active_tiles = np.argwhere(text_tile_mask)
@@ -327,44 +335,111 @@ def build_component_phase_groups(
     return groups
 
 
-def build_component_half_phase_groups(
-    text_tile_mask: np.ndarray,
-    phase_count: int,
-) -> np.ndarray:
-    groups = np.full(text_tile_mask.shape, -1, dtype=np.int16)
-    ordered_components = order_text_components(collect_text_components(text_tile_mask))
-    phase_separation = phase_count // 2
-
-    for index, component in enumerate(ordered_components):
-        top_group = index % phase_separation
-        bottom_group = top_group + phase_separation
-        min_tile_y = min(tile_y for tile_y, _ in component)
-        max_tile_y = max(tile_y for tile_y, _ in component)
-        split_tile_y = (min_tile_y + max_tile_y) / 2.0
-
-        for tile_y, tile_x in component:
-            group = top_group if tile_y <= split_tile_y else bottom_group
-            groups[tile_y, tile_x] = group
-    return groups
-
-
 def apply_phase_overrides(
     base_tile_labels: np.ndarray,
     phase_groups: np.ndarray,
-    phase_count: int,
     palette_size: int,
-    phase_index: int,
-    active_phases: int,
+    active_groups: tuple[int, ...],
     text_vector_index: int,
 ) -> np.ndarray:
     frame_tile_labels = np.array(base_tile_labels, copy=True)
-    for offset in range(active_phases):
-        group_index = (phase_index + offset) % phase_count
+    for group_index in active_groups:
         group_mask = phase_groups == group_index
         if not np.any(group_mask):
             continue
         frame_tile_labels[group_mask] = (text_vector_index + group_index) % palette_size
     return frame_tile_labels
+
+
+def build_cycle_schedule(
+    groups: list[int],
+    active_count: int,
+    step_count: int,
+) -> list[tuple[int, ...]]:
+    if not groups:
+        return [tuple()] * step_count
+    if active_count >= len(groups):
+        return [tuple(groups)] * step_count
+
+    schedule: list[tuple[int, ...]] = []
+    for step_index in range(step_count):
+        start = step_index % len(groups)
+        active_groups = tuple(groups[(start + offset) % len(groups)] for offset in range(active_count))
+        schedule.append(active_groups)
+    return schedule
+
+
+def build_randomized_schedule(
+    rng: np.random.Generator,
+    groups: list[int],
+    active_count: int,
+    step_count: int,
+    schedule_span: int,
+) -> list[tuple[int, ...]]:
+    if not groups:
+        return [tuple()] * step_count
+    if active_count >= len(groups):
+        return [tuple(groups)] * step_count
+
+    if active_count == len(groups) - 1:
+        omission_weights = rng.random(len(groups)) + 0.35
+        schedule: list[tuple[int, ...]] = []
+        previous_omitted: int | None = None
+        previous_previous_omitted: int | None = None
+
+        while len(schedule) < step_count:
+            candidate_indices = [index for index, group in enumerate(groups) if group != previous_omitted]
+            weights = np.asarray([omission_weights[index] for index in candidate_indices], dtype=np.float64)
+            if previous_previous_omitted is not None:
+                for position, index in enumerate(candidate_indices):
+                    if groups[index] == previous_previous_omitted:
+                        weights[position] *= 0.45
+            weights = weights / weights.sum()
+            chosen_index = int(rng.choice(candidate_indices, p=weights))
+            omitted_group = groups[chosen_index]
+            active_groups = tuple(group for group in groups if group != omitted_group)
+            run_length = int(rng.integers(1, schedule_span + 1))
+            schedule.extend([active_groups] * run_length)
+            previous_previous_omitted = previous_omitted
+            previous_omitted = omitted_group
+
+        return schedule[:step_count]
+
+    combinations = [tuple(combo) for combo in itertools.combinations(groups, active_count)]
+    schedule = [combinations[int(rng.integers(0, len(combinations)))]]
+    while len(schedule) < step_count:
+        previous = schedule[-1]
+        ranked: list[tuple[float, tuple[int, ...]]] = []
+        for combo in combinations:
+            if combo == previous and len(combinations) > 1:
+                continue
+            overlap = len(set(combo) & set(previous))
+            score = overlap + float(rng.random()) * 0.25
+            if len(schedule) >= 2 and combo == schedule[-2]:
+                score -= 0.75
+            ranked.append((score, combo))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        top_score = ranked[0][0]
+        top_combos = [combo for score, combo in ranked if score >= top_score - 0.2]
+        chosen_combo = top_combos[int(rng.integers(0, len(top_combos)))]
+        run_length = int(rng.integers(1, schedule_span + 1))
+        schedule.extend([chosen_combo] * run_length)
+    return schedule[:step_count]
+
+
+def build_phase_schedule(
+    rng: np.random.Generator,
+    phase_groups: np.ndarray,
+    active_phases: int,
+    step_count: int,
+    schedule_mode: str,
+    schedule_span: int,
+) -> list[tuple[int, ...]]:
+    used_groups = sorted(int(group) for group in np.unique(phase_groups) if group >= 0)
+    active_count = min(active_phases, len(used_groups))
+    if schedule_mode == "cycle":
+        return build_cycle_schedule(used_groups, active_count, step_count)
+    return build_randomized_schedule(rng, used_groups, active_count, step_count, schedule_span)
 
 
 def shifted_field(field: np.ndarray, dx: int, dy: int, frame_index: int) -> np.ndarray:
@@ -445,6 +520,7 @@ def resolve_background_tile_labels(
 
 def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     frame_count = frame_count_from_args(args)
+    phase_step_count = (frame_count + args.phase_hold - 1) // args.phase_hold
     rng = np.random.default_rng(args.seed)
     palette = args.palette_vectors
     field_stack = build_palette_fields(rng, args.height, args.width, args.grain, len(palette))
@@ -462,6 +538,14 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
         args.phase_count,
         args.phase_mode,
     )
+    phase_schedule = build_phase_schedule(
+        rng=rng,
+        phase_groups=text_phase_groups,
+        active_phases=args.active_phases,
+        step_count=phase_step_count,
+        schedule_mode=args.schedule_mode,
+        schedule_span=args.schedule_span,
+    )
 
     for frame_index, (x_offset, y_offset) in enumerate(
         text_drift_offsets(frame_count, args.fps, args.text_drift, args.text_drift_speed)
@@ -476,7 +560,7 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
             y_offset=y_offset,
         )
 
-        phase_index = (frame_index // args.phase_hold) % args.phase_count
+        schedule_index = min(frame_index // args.phase_hold, len(phase_schedule) - 1)
         background_tile_labels = resolve_background_tile_labels(
             base_tile_labels=base_tile_labels,
             background_phase_steps=background_phase_steps,
@@ -488,10 +572,8 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
         frame_tile_labels = apply_phase_overrides(
             base_tile_labels=background_tile_labels,
             phase_groups=shifted_phase_groups,
-            phase_count=args.phase_count,
             palette_size=len(palette),
-            phase_index=phase_index,
-            active_phases=min(args.active_phases, args.phase_count),
+            active_groups=phase_schedule[schedule_index],
             text_vector_index=args.text_vector_index,
         )
         frame_label_map = expand_tile_map(frame_tile_labels, args.tile_size, args.height, args.width)
