@@ -40,7 +40,7 @@ from text_noise_video import (
 
 
 DEFAULT_SWEEP_OUTPUT_DIR = "attack_sweep"
-DEFAULT_SWEEP_ALGORITHMS = ("stddev", "delta_energy", "pca1", "block_flow_angle")
+DEFAULT_SWEEP_ALGORITHMS = ("block_flow_angle",)
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         choices=tuple(ALGORITHMS.keys()),
         default=list(DEFAULT_SWEEP_ALGORITHMS),
-        help="Attack algorithms used for scoring.",
+        help="Attack algorithms used for scoring. Defaults to the primary attacker model only.",
     )
     parser.add_argument(
         "--downscale",
