@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Benchmark simple attacks that try to recover readable text from GOTCHA videos."""
+"""Benchmark reconstruction attacks against GOTCHA videos.
+
+`block_flow_angle` is the primary attacker model. The remaining algorithms are
+kept as optional diagnostic baselines rather than the default benchmark path.
+"""
 
 from __future__ import annotations
 
@@ -28,11 +32,14 @@ DEFAULT_PAIR_STEP = 1
 DEFAULT_MAX_PAIRS = 24
 DEFAULT_WINDOW_SIZE = 0
 DEFAULT_WINDOW_STRIDE = 1
-DEFAULT_ALGORITHMS = (
+PRIMARY_ATTACK_ALGORITHMS = ("block_flow_angle",)
+DIAGNOSTIC_BASELINE_ALGORITHMS = (
     "mean",
     "stddev",
     "delta_energy",
     "pca1",
+)
+AVAILABLE_ALGORITHMS = DIAGNOSTIC_BASELINE_ALGORITHMS + (
     "block_flow_angle",
 )
 
@@ -40,7 +47,7 @@ DEFAULT_ALGORITHMS = (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run several lightweight reconstruction attacks against a GOTCHA video, "
+            "Run the primary GOTCHA attack and optional diagnostic baselines, "
             "save their output images, and log timing plus simple image metrics."
         )
     )
@@ -58,9 +65,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--algorithms",
         nargs="+",
-        choices=DEFAULT_ALGORITHMS,
-        default=list(DEFAULT_ALGORITHMS),
-        help="Attack algorithms to run.",
+        choices=AVAILABLE_ALGORITHMS,
+        default=list(PRIMARY_ATTACK_ALGORITHMS),
+        help="Algorithms to run. Defaults to the primary attacker model only.",
     )
     parser.add_argument(
         "--downscale",
@@ -427,7 +434,7 @@ ALGORITHMS: dict[str, tuple[str, AlgorithmFn]] = {
         pca1_attack,
     ),
     "block_flow_angle": (
-        "Block-matching motion angle map inspired by the optical-flow attack note.",
+        "Primary attacker model: tuned two-frame block-matching motion angle map.",
         block_flow_angle_attack,
     ),
 }

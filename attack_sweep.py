@@ -14,6 +14,8 @@ import numpy as np
 
 from attack_bench import (
     ALGORITHMS,
+    AVAILABLE_ALGORITHMS,
+    PRIMARY_ATTACK_ALGORITHMS,
     frame_windows,
     image_metrics,
     normalize_image,
@@ -40,14 +42,14 @@ from text_noise_video import (
 
 
 DEFAULT_SWEEP_OUTPUT_DIR = "attack_sweep"
-DEFAULT_SWEEP_ALGORITHMS = ("stddev", "delta_energy", "pca1", "block_flow_angle")
+DEFAULT_SWEEP_ALGORITHMS = PRIMARY_ATTACK_ALGORITHMS
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Generate a grid of GOTCHA parameter variants, run the configured attack "
-            "algorithms, and rank cases by how recoverable the hidden text is."
+            "Generate a grid of GOTCHA parameter variants, run the configured "
+            "primary attack plus optional diagnostics, and rank cases by recoverability."
         )
     )
     parser.add_argument("--text", default=DEFAULT_TEXT, help="Text to render in generated cases.")
@@ -87,9 +89,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--algorithms",
         nargs="+",
-        choices=tuple(ALGORITHMS.keys()),
+        choices=AVAILABLE_ALGORITHMS,
         default=list(DEFAULT_SWEEP_ALGORITHMS),
-        help="Attack algorithms used for scoring.",
+        help="Algorithms used for scoring. Defaults to the primary attacker model only.",
     )
     parser.add_argument(
         "--downscale",
