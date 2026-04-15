@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Iterable
 
 import numpy as np
+from PIL import Image, ImageDraw
 
 from text_noise_video import (
     DEFAULT_DURATION,
@@ -31,6 +32,7 @@ from text_noise_video import (
     DEFAULT_TEXT_DRIFT,
     DEFAULT_TEXT_DRIFT_SPEED,
     DEFAULT_WIDTH,
+    fit_text,
     make_noise,
     make_text_mask,
     render_text_image,
@@ -50,6 +52,7 @@ DEFAULT_BACKGROUND_CYCLE_HOLD = 12
 DEFAULT_PHASE_MODE = "components"
 DEFAULT_SCHEDULE_MODE = "randomized"
 DEFAULT_SCHEDULE_SPAN = 3
+DEFAULT_RANDOM_DIGIT_COUNT = 5
 
 
 def parse_args() -> argparse.Namespace:
@@ -67,6 +70,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
     parser.add_argument("--font-size", type=int, default=DEFAULT_FONT_SIZE)
     parser.add_argument("--grain", type=int, default=DEFAULT_GRAIN)
+    parser.add_argument(
+        "--background-grain",
+        type=int,
+        default=None,
+        help="Optional noise grain for background-local-motion fields. Defaults to --grain.",
+    )
+    parser.add_argument(
+        "--text-grain",
+        type=int,
+        default=None,
+        help="Optional noise grain for text-local-motion fields. Defaults to --grain.",
+    )
     parser.add_argument("--feather", type=float, default=DEFAULT_FEATHER)
     parser.add_argument("--text-drift", type=float, default=DEFAULT_TEXT_DRIFT)
     parser.add_argument("--text-drift-speed", type=float, default=DEFAULT_TEXT_DRIFT_SPEED)
@@ -113,14 +128,20 @@ def parse_args() -> argparse.Namespace:
         help="Frames to hold each background palette update.",
     )
     parser.add_argument(
+        "--background-vector-index",
+        type=int,
+        default=None,
+        help="Optional fixed palette index for all background tiles before text-phase overrides.",
+    )
+    parser.add_argument(
         "--phase-mode",
-        choices=("bands", "components"),
+        choices=("bands", "components", "glyphs"),
         default=DEFAULT_PHASE_MODE,
         help="How to divide the text into reveal groups.",
     )
     parser.add_argument(
         "--schedule-mode",
-        choices=("cycle", "randomized"),
+        choices=("cycle", "randomized", "overlap_cycle", "pair_safe_random"),
         default=DEFAULT_SCHEDULE_MODE,
         help="How active text groups are scheduled over time.",
     )
@@ -131,9 +152,15 @@ def parse_args() -> argparse.Namespace:
         help="How many phase-hold steps a randomized reveal subset tends to persist.",
     )
     parser.add_argument(
+        "--pair-safe-max-gap",
+        type=int,
+        default=6,
+        help="Maximum frame gap the pair-safe random scheduler tries to protect against.",
+    )
+    parser.add_argument(
         "--random-digits",
         action="store_true",
-        help="Generate a random 4-digit secret internally instead of using --text.",
+        help="Generate a random 5-digit secret internally instead of using --text.",
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--font", default=None)
@@ -143,6 +170,11 @@ def parse_args() -> argparse.Namespace:
     args.palette_vectors = parse_palette(args.palette)
     if not 0 <= args.text_vector_index < len(args.palette_vectors):
         raise SystemExit("--text-vector-index must refer to a valid palette entry.")
+    if (
+        args.background_vector_index is not None
+        and not 0 <= args.background_vector_index < len(args.palette_vectors)
+    ):
+        raise SystemExit("--background-vector-index must refer to a valid palette entry.")
     return args
 
 
@@ -157,6 +189,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Font size must be greater than 0.")
     if args.grain <= 0:
         raise SystemExit("Grain must be greater than 0.")
+    if args.background_grain is not None and args.background_grain <= 0:
+        raise SystemExit("Background grain must be greater than 0.")
+    if args.text_grain is not None and args.text_grain <= 0:
+        raise SystemExit("Text grain must be greater than 0.")
     if args.feather < 0:
         raise SystemExit("Feather must be 0 or greater.")
     if args.text_drift < 0:
@@ -173,8 +209,12 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Active phases must be greater than 0.")
     if args.schedule_span <= 0:
         raise SystemExit("Schedule span must be greater than 0.")
+    if args.pair_safe_max_gap < 0:
+        raise SystemExit("Pair-safe max gap must be 0 or greater.")
     if args.background_cycle_hold <= 0:
         raise SystemExit("Background cycle hold must be greater than 0.")
+    if args.background_vector_index is not None and args.background_vector_index < 0:
+        raise SystemExit("Background vector index must be 0 or greater.")
     if not args.random_digits and not args.text.strip():
         raise SystemExit("Text cannot be empty.")
 
@@ -197,7 +237,8 @@ def parse_palette(raw: str) -> list[tuple[int, int]]:
 
 def resolve_render_text(args: argparse.Namespace) -> str:
     if args.random_digits:
-        return f"{secrets.randbelow(10000):04d}"
+        upper_bound = 10 ** DEFAULT_RANDOM_DIGIT_COUNT
+        return f"{secrets.randbelow(upper_bound):0{DEFAULT_RANDOM_DIGIT_COUNT}d}"
     return args.text
 
 
@@ -270,6 +311,86 @@ def build_text_phase_groups(
         # stroke fragments while still avoiding one coherent full-word mask.
         projected = (tile_x - min_x) + 0.45 * (tile_y - min_y)
         groups[tile_y, tile_x] = int(np.floor(projected / band_width)) % phase_count
+    return groups
+
+
+def render_glyph_images(
+    text: str,
+    width: int,
+    height: int,
+    font_size: int,
+    font_path: str | None,
+) -> list[Image.Image]:
+    wrapped_text, font = fit_text(text, width, height, font_size, font_path)
+    if not wrapped_text.strip():
+        return []
+
+    probe = Image.new("L", (width, height), 0)
+    probe_draw = ImageDraw.Draw(probe)
+    spacing = max(0, int(getattr(font, "size", font_size) * 0.12))
+    bbox = probe_draw.multiline_textbbox((0, 0), wrapped_text, font=font, align="center", spacing=spacing)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    origin_x = (width - text_width) / 2.0 - bbox[0]
+    origin_y = (height - text_height) / 2.0 - bbox[1]
+
+    glyph_images: list[Image.Image] = []
+    lines = wrapped_text.splitlines() or [wrapped_text]
+    line_cursor_y = origin_y
+
+    for line_index, line in enumerate(lines):
+        line_bbox = probe_draw.textbbox((0, 0), line, font=font)
+        line_origin_x = origin_x + ((text_width - (line_bbox[2] - line_bbox[0])) / 2.0) - line_bbox[0]
+        line_length = probe_draw.textlength(line, font=font)
+
+        for char_index, char in enumerate(line):
+            if char.isspace():
+                continue
+
+            prefix = line[:char_index]
+            prefix_length = probe_draw.textlength(prefix, font=font) if prefix else 0.0
+            char_x = line_origin_x + prefix_length
+            glyph_image = Image.new("L", (width, height), 0)
+            glyph_draw = ImageDraw.Draw(glyph_image)
+            glyph_draw.text((char_x, line_cursor_y), char, fill=255, font=font)
+            glyph_images.append(glyph_image)
+
+        if line_index == len(lines) - 1:
+            continue
+
+        line_height = line_bbox[3] - line_bbox[1]
+        line_cursor_y += line_height + spacing
+
+    return glyph_images
+
+
+def build_glyph_phase_groups(
+    text: str,
+    width: int,
+    height: int,
+    font_size: int,
+    font_path: str | None,
+    feather: float,
+    tile_size: int,
+    phase_count: int,
+) -> np.ndarray:
+    glyph_images = render_glyph_images(text, width, height, font_size, font_path)
+    tiles_y = (height + tile_size - 1) // tile_size
+    tiles_x = (width + tile_size - 1) // tile_size
+    groups = np.full((tiles_y, tiles_x), -1, dtype=np.int16)
+
+    if not glyph_images:
+        return groups
+    if len(glyph_images) > phase_count:
+        raise SystemExit(
+            "--phase-count must be at least the number of visible glyphs when --phase-mode glyphs is used."
+        )
+
+    for group_index, glyph_image in enumerate(glyph_images):
+        glyph_mask = make_text_mask(glyph_image, feather)
+        glyph_tile_mask = tile_mask_from_pixel_mask(glyph_mask, tile_size)
+        groups[glyph_tile_mask] = group_index
+
     return groups
 
 
@@ -427,6 +548,85 @@ def build_randomized_schedule(
     return schedule[:step_count]
 
 
+def build_overlap_cycle_schedule(
+    groups: list[int],
+    active_count: int,
+    step_count: int,
+    schedule_span: int,
+) -> list[tuple[int, ...]]:
+    if not groups:
+        return [tuple()] * step_count
+    if active_count >= len(groups):
+        return [tuple(groups)] * step_count
+
+    hidden_count = len(groups) - active_count
+    if hidden_count != 2:
+        raise SystemExit("--schedule-mode overlap_cycle currently requires exactly two hidden groups per frame.")
+
+    cycle: list[tuple[int, ...]] = []
+    for index in range(len(groups)):
+        hidden_groups = {groups[index], groups[(index + 1) % len(groups)]}
+        active_groups = tuple(group for group in groups if group not in hidden_groups)
+        cycle.extend([active_groups] * schedule_span)
+
+    schedule: list[tuple[int, ...]] = []
+    while len(schedule) < step_count:
+        schedule.extend(cycle)
+    return schedule[:step_count]
+
+
+def build_pair_safe_random_schedule(
+    rng: np.random.Generator,
+    groups: list[int],
+    active_count: int,
+    step_count: int,
+    phase_hold: int,
+    pair_safe_max_gap: int,
+) -> list[tuple[int, ...]]:
+    if not groups:
+        return [tuple()] * step_count
+    if active_count >= len(groups):
+        return [tuple(groups)] * step_count
+
+    hidden_count = len(groups) - active_count
+    if hidden_count != 2:
+        raise SystemExit("--schedule-mode pair_safe_random currently requires exactly two hidden groups per frame.")
+
+    protected_steps = max(2, int(np.ceil((pair_safe_max_gap + 1) / phase_hold)))
+    schedule: list[tuple[int, ...]] = []
+    previous_hidden: tuple[int, int] | None = None
+
+    while len(schedule) < step_count:
+        if previous_hidden is None:
+            anchor = groups[int(rng.integers(0, len(groups)))]
+        else:
+            anchor = previous_hidden[int(rng.integers(0, len(previous_hidden)))]
+
+        companions = [group for group in groups if group != anchor]
+        rng.shuffle(companions)
+        if previous_hidden is not None:
+            previous_companion = previous_hidden[0] if previous_hidden[1] == anchor else previous_hidden[1]
+            companions.sort(key=lambda group: (group == previous_companion, float(rng.random())))
+
+        segment_hidden_pairs: list[tuple[int, int]] = []
+        for step_index in range(protected_steps):
+            companion = companions[step_index % len(companions)]
+            hidden_pair = tuple(sorted((anchor, companion)))
+            if previous_hidden is not None and step_index == 0 and hidden_pair == previous_hidden and len(companions) > 1:
+                companion = companions[(step_index + 1) % len(companions)]
+                hidden_pair = tuple(sorted((anchor, companion)))
+            segment_hidden_pairs.append(hidden_pair)
+
+        for hidden_pair in segment_hidden_pairs:
+            active_groups = tuple(group for group in groups if group not in hidden_pair)
+            schedule.append(active_groups)
+            previous_hidden = hidden_pair
+            if len(schedule) >= step_count:
+                break
+
+    return schedule[:step_count]
+
+
 def build_phase_schedule(
     rng: np.random.Generator,
     phase_groups: np.ndarray,
@@ -434,11 +634,24 @@ def build_phase_schedule(
     step_count: int,
     schedule_mode: str,
     schedule_span: int,
+    phase_hold: int,
+    pair_safe_max_gap: int,
 ) -> list[tuple[int, ...]]:
     used_groups = sorted(int(group) for group in np.unique(phase_groups) if group >= 0)
     active_count = min(active_phases, len(used_groups))
     if schedule_mode == "cycle":
         return build_cycle_schedule(used_groups, active_count, step_count)
+    if schedule_mode == "overlap_cycle":
+        return build_overlap_cycle_schedule(used_groups, active_count, step_count, schedule_span)
+    if schedule_mode == "pair_safe_random":
+        return build_pair_safe_random_schedule(
+            rng,
+            used_groups,
+            active_count,
+            step_count,
+            phase_hold,
+            pair_safe_max_gap,
+        )
     return build_randomized_schedule(rng, used_groups, active_count, step_count, schedule_span)
 
 
@@ -462,6 +675,18 @@ def compose_palette_frame(
     label_map: np.ndarray,
 ) -> np.ndarray:
     return np.take_along_axis(shifted_fields, label_map[None, :, :], axis=0)[0]
+
+
+def compose_dual_palette_frame(
+    background_shifted_fields: np.ndarray,
+    background_label_map: np.ndarray,
+    text_shifted_fields: np.ndarray,
+    frame_label_map: np.ndarray,
+    active_text_mask: np.ndarray,
+) -> np.ndarray:
+    background_frame = compose_palette_frame(background_shifted_fields, background_label_map)
+    text_frame = compose_palette_frame(text_shifted_fields, frame_label_map)
+    return np.where(active_text_mask, text_frame, background_frame)
 
 
 def shift_phase_groups(
@@ -523,21 +748,58 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     phase_step_count = (frame_count + args.phase_hold - 1) // args.phase_hold
     rng = np.random.default_rng(args.seed)
     palette = args.palette_vectors
-    field_stack = build_palette_fields(rng, args.height, args.width, args.grain, len(palette))
+    background_grain = args.grain if args.background_grain is None else args.background_grain
+    text_grain = args.grain if args.text_grain is None else args.text_grain
+    background_field_stack = build_palette_fields(
+        rng,
+        args.height,
+        args.width,
+        background_grain,
+        len(palette),
+    )
+    if text_grain == background_grain:
+        text_field_stack = np.array(background_field_stack, copy=True)
+    else:
+        text_field_stack = build_palette_fields(
+            rng,
+            args.height,
+            args.width,
+            text_grain,
+            len(palette),
+        )
 
     tiles_y = (args.height + args.tile_size - 1) // args.tile_size
     tiles_x = (args.width + args.tile_size - 1) // args.tile_size
-    base_tile_labels = rng.integers(0, len(palette), size=(tiles_y, tiles_x), endpoint=False)
+    if args.background_vector_index is None:
+        base_tile_labels = rng.integers(0, len(palette), size=(tiles_y, tiles_x), endpoint=False)
+    else:
+        base_tile_labels = np.full(
+            (tiles_y, tiles_x),
+            args.background_vector_index,
+            dtype=np.int64,
+        )
     background_phase_steps = rng.choice(np.asarray([-1, 1], dtype=np.int16), size=(tiles_y, tiles_x))
 
     text_image = render_text_image(args.text, args.width, args.height, args.font_size, args.font)
     base_text_mask = make_text_mask(text_image, args.feather)
-    base_text_tile_mask = tile_mask_from_pixel_mask(base_text_mask, args.tile_size)
-    text_phase_groups = build_text_phase_groups(
-        base_text_tile_mask,
-        args.phase_count,
-        args.phase_mode,
-    )
+    if args.phase_mode == "glyphs":
+        text_phase_groups = build_glyph_phase_groups(
+            text=args.text,
+            width=args.width,
+            height=args.height,
+            font_size=args.font_size,
+            font_path=args.font,
+            feather=args.feather,
+            tile_size=args.tile_size,
+            phase_count=args.phase_count,
+        )
+    else:
+        base_text_tile_mask = tile_mask_from_pixel_mask(base_text_mask, args.tile_size)
+        text_phase_groups = build_text_phase_groups(
+            base_text_tile_mask,
+            args.phase_count,
+            args.phase_mode,
+        )
     phase_schedule = build_phase_schedule(
         rng=rng,
         phase_groups=text_phase_groups,
@@ -545,6 +807,8 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
         step_count=phase_step_count,
         schedule_mode=args.schedule_mode,
         schedule_span=args.schedule_span,
+        phase_hold=args.phase_hold,
+        pair_safe_max_gap=args.pair_safe_max_gap,
     )
 
     for frame_index, (x_offset, y_offset) in enumerate(
@@ -576,12 +840,40 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
             active_groups=phase_schedule[schedule_index],
             text_vector_index=args.text_vector_index,
         )
+        active_text_mask = expand_tile_map(
+            np.isin(shifted_phase_groups, phase_schedule[schedule_index]),
+            args.tile_size,
+            args.height,
+            args.width,
+        )
+        background_label_map = expand_tile_map(
+            background_tile_labels,
+            args.tile_size,
+            args.height,
+            args.width,
+        )
         frame_label_map = expand_tile_map(frame_tile_labels, args.tile_size, args.height, args.width)
-        shifted_fields = np.stack(
-            [shifted_field(field_stack[index], dx, dy, frame_index) for index, (dx, dy) in enumerate(palette)],
+        background_shifted_fields = np.stack(
+            [
+                shifted_field(background_field_stack[index], dx, dy, frame_index)
+                for index, (dx, dy) in enumerate(palette)
+            ],
             axis=0,
         )
-        frame = compose_palette_frame(shifted_fields, frame_label_map)
+        text_shifted_fields = np.stack(
+            [
+                shifted_field(text_field_stack[index], dx, dy, frame_index)
+                for index, (dx, dy) in enumerate(palette)
+            ],
+            axis=0,
+        )
+        frame = compose_dual_palette_frame(
+            background_shifted_fields,
+            background_label_map,
+            text_shifted_fields,
+            frame_label_map,
+            active_text_mask,
+        )
         rgb = np.repeat(frame[:, :, None], 3, axis=2) * 255.0
         yield np.clip(rgb, 0.0, 255.0).astype(np.uint8)
 

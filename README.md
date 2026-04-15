@@ -82,7 +82,7 @@ the baseline leaks.
 poetry run python text_noise_video_defense.py --text TIMBER --output timber_defense.mp4
 ```
 
-To generate a hidden 4-digit code without printing it to stdout:
+To generate a hidden 5-digit code without printing it to stdout:
 
 ```bash
 poetry run python text_noise_video_defense.py \
@@ -102,7 +102,7 @@ The defense generator differs from the baseline in three main ways:
 
 Useful defense flags:
 
-- `--random-digits` to generate a hidden 4-digit code internally
+- `--random-digits` to generate a hidden 5-digit code internally
 - `--grain` to control the size of the moving noise chunks
 - `--phase-mode` to choose between `components` and `bands`
 - `--phase-count`, `--active-phases`, `--phase-hold` to tune how much of the
@@ -203,7 +203,7 @@ during a blind two-frame attack:
 
 On the better defense variants we tested:
 
-- humans typically read a 4-digit code in about `10-20s`
+- humans typically read a 5-digit code in about `10-20s`
 - the generic attack suite mostly failed to recover the answer directly
 - the strongest practical recovery path was still a targeted two-frame
   `block_flow_angle` scan plus aggregation of partial clues
