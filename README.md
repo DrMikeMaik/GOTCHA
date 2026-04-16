@@ -168,7 +168,7 @@ Attack that one and compare the results.
 | `--window-stride` | Stride between windows (default 1) |
 | `--include-full-window` | Also run full-clip analysis alongside windows |
 
-### attack_pair_sweep.py
+### attack\_pair\_sweep.py
 
 | Flag | What it does |
 |------|-------------|
@@ -178,7 +178,7 @@ Attack that one and compare the results.
 | `--include-full-window` | Also evaluate the full clip |
 | `--top-k` | How many top results to save and montage (default 12) |
 
-### attack_resistance_sweep.py
+### attack\_resistance\_sweep.py
 
 | Flag | What it does |
 |------|-------------|
