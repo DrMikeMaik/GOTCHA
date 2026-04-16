@@ -13,9 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from attack_bench import (
-    ALGORITHMS,
-    AVAILABLE_ALGORITHMS,
-    PRIMARY_ATTACK_ALGORITHMS,
+    block_flow_angle_attack,
     frame_windows,
     image_metrics,
     normalize_image,
@@ -42,7 +40,6 @@ from text_noise_video import (
 
 
 DEFAULT_SWEEP_OUTPUT_DIR = "attack_sweep"
-DEFAULT_SWEEP_ALGORITHMS = PRIMARY_ATTACK_ALGORITHMS
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,13 +82,6 @@ def parse_args() -> argparse.Namespace:
         "--text-drift-speeds",
         default=str(DEFAULT_TEXT_DRIFT_SPEED),
         help="Comma-separated text drift speed values to sweep.",
-    )
-    parser.add_argument(
-        "--algorithms",
-        nargs="+",
-        choices=AVAILABLE_ALGORITHMS,
-        default=list(DEFAULT_SWEEP_ALGORITHMS),
-        help="Algorithms used for scoring. Defaults to the primary attacker model only.",
     )
     parser.add_argument(
         "--downscale",
@@ -203,9 +193,8 @@ def build_case_grid(args: argparse.Namespace) -> list[dict]:
     return cases
 
 
-def analysis_namespace(args: argparse.Namespace, algorithms: list[str]) -> argparse.Namespace:
+def analysis_namespace(args: argparse.Namespace) -> argparse.Namespace:
     return argparse.Namespace(
-        algorithms=algorithms,
         block_size=args.block_size,
         search_radius=args.search_radius,
         pair_step=args.pair_step,
@@ -332,7 +321,7 @@ def save_preview(image: np.ndarray, output_path: Path) -> None:
 
 
 def analyze_case(case: dict, args: argparse.Namespace) -> dict:
-    attack_args = analysis_namespace(args, args.algorithms)
+    attack_args = analysis_namespace(args)
     generation_start = time.perf_counter()
     frames = generate_analysis_frames(case, args)
     reference_frames = generate_reference_frames(case, args)
@@ -344,65 +333,42 @@ def analyze_case(case: dict, args: argparse.Namespace) -> dict:
         include_full_window=args.include_full_window,
     )
 
-    results = []
-    for algorithm_name in args.algorithms:
-        _, implementation = ALGORITHMS[algorithm_name]
-        best_result = None
-        window_results = []
-        for start_frame, end_frame in windows:
-            windowed_frames = frames[start_frame:end_frame]
-            reference = normalize_image(reference_frames[start_frame:end_frame].mean(axis=0))
-            reference_edges = edge_map(reference)
-            start = time.perf_counter()
-            recovered = normalize_image(implementation(windowed_frames, attack_args))
-            seconds = time.perf_counter() - start
-            recovery = attack_recovery_metrics(recovered, reference, reference_edges)
-            candidate = {
-                "algorithm": algorithm_name,
-                "seconds": round(seconds, 4),
-                "metrics": image_metrics(recovered),
-                "recovery": recovery,
-                "image": recovered,
-                "reference": reference,
-                "reference_edges": reference_edges,
-                "start_frame": start_frame,
-                "end_frame_exclusive": end_frame,
-                "frame_count": end_frame - start_frame,
-            }
-            window_results.append(
-                {
-                    key: value
-                    for key, value in candidate.items()
-                    if key not in {"image", "reference", "reference_edges"}
-                }
-            )
-            if (
-                best_result is None
-                or candidate["recovery"]["recoverability_score"]
-                > best_result["recovery"]["recoverability_score"]
-            ):
-                best_result = candidate
-
-        assert best_result is not None
-        results.append(
+    best_result = None
+    window_results = []
+    for start_frame, end_frame in windows:
+        windowed_frames = frames[start_frame:end_frame]
+        reference = normalize_image(reference_frames[start_frame:end_frame].mean(axis=0))
+        reference_edges = edge_map(reference)
+        start = time.perf_counter()
+        recovered = normalize_image(block_flow_angle_attack(windowed_frames, attack_args))
+        seconds = time.perf_counter() - start
+        recovery = attack_recovery_metrics(recovered, reference, reference_edges)
+        candidate = {
+            "seconds": round(seconds, 4),
+            "metrics": image_metrics(recovered),
+            "recovery": recovery,
+            "image": recovered,
+            "reference": reference,
+            "reference_edges": reference_edges,
+            "start_frame": start_frame,
+            "end_frame_exclusive": end_frame,
+            "frame_count": end_frame - start_frame,
+        }
+        window_results.append(
             {
-                "algorithm": algorithm_name,
-                "seconds": best_result["seconds"],
-                "metrics": best_result["metrics"],
-                "recovery": best_result["recovery"],
-                "image": best_result["image"],
-                "reference": best_result["reference"],
-                "reference_edges": best_result["reference_edges"],
-                "best_window": {
-                    "start_frame": best_result["start_frame"],
-                    "end_frame_exclusive": best_result["end_frame_exclusive"],
-                    "frame_count": best_result["frame_count"],
-                },
-                "evaluated_windows": window_results,
+                key: value
+                for key, value in candidate.items()
+                if key not in {"image", "reference", "reference_edges"}
             }
         )
+        if (
+            best_result is None
+            or candidate["recovery"]["recoverability_score"]
+            > best_result["recovery"]["recoverability_score"]
+        ):
+            best_result = candidate
 
-    best = max(results, key=lambda item: item["recovery"]["recoverability_score"])
+    assert best_result is not None
     return {
         "case_id": case["case_id"],
         "params": {
@@ -414,14 +380,29 @@ def analyze_case(case: dict, args: argparse.Namespace) -> dict:
             "seed": case["seed"],
         },
         "generation_seconds": round(generation_seconds, 4),
-        "best_attack_algorithm": best["algorithm"],
-        "best_recoverability_score": best["recovery"]["recoverability_score"],
-        "best_attack_seconds": best["seconds"],
-        "best_window": best["best_window"],
-        "reference_metrics": image_metrics(best["reference"]),
-        "results": results,
-        "reference": best["reference"],
-        "reference_edges": best["reference_edges"],
+        "best_recoverability_score": best_result["recovery"]["recoverability_score"],
+        "best_attack_seconds": best_result["seconds"],
+        "best_window": {
+            "start_frame": best_result["start_frame"],
+            "end_frame_exclusive": best_result["end_frame_exclusive"],
+            "frame_count": best_result["frame_count"],
+        },
+        "reference_metrics": image_metrics(best_result["reference"]),
+        "results": [{
+            "algorithm": "block_flow_angle",
+            "seconds": best_result["seconds"],
+            "metrics": best_result["metrics"],
+            "recovery": best_result["recovery"],
+            "image": best_result["image"],
+            "best_window": {
+                "start_frame": best_result["start_frame"],
+                "end_frame_exclusive": best_result["end_frame_exclusive"],
+                "frame_count": best_result["frame_count"],
+            },
+            "evaluated_windows": window_results,
+        }],
+        "reference": best_result["reference"],
+        "reference_edges": best_result["reference_edges"],
     }
 
 
@@ -443,14 +424,12 @@ def save_ranked_artifacts(
         save_preview(case["reference"], reference_path)
         edge_reference_path = artifact_dir / f"{case['case_id']}_reference_edges.png"
         save_preview(case["reference_edges"], edge_reference_path)
-        for result in case["results"]:
-            if result["algorithm"] != case["best_attack_algorithm"]:
-                continue
-            attack_path = artifact_dir / f"{case['case_id']}_{result['algorithm']}.png"
-            save_preview(result["image"], attack_path)
-            case["best_attack_image"] = str(attack_path)
-            case["reference_image"] = str(reference_path)
-            case["reference_edges_image"] = str(edge_reference_path)
+        result = case["results"][0]
+        attack_path = artifact_dir / f"{case['case_id']}_block_flow_angle.png"
+        save_preview(result["image"], attack_path)
+        case["best_attack_image"] = str(attack_path)
+        case["reference_image"] = str(reference_path)
+        case["reference_edges_image"] = str(edge_reference_path)
 
 
 def scrub_images(cases: list[dict]) -> list[dict]:
@@ -489,7 +468,6 @@ def write_csv(cases: list[dict], output_path: Path) -> None:
                 "text_drift",
                 "text_drift_speed",
                 "seed",
-                "best_attack_algorithm",
                 "best_recoverability_score",
                 "best_attack_seconds",
                 "generation_seconds",
@@ -509,7 +487,6 @@ def write_csv(cases: list[dict], output_path: Path) -> None:
                     "text_drift": case["params"]["text_drift"],
                     "text_drift_speed": case["params"]["text_drift_speed"],
                     "seed": case["params"]["seed"],
-                    "best_attack_algorithm": case["best_attack_algorithm"],
                     "best_recoverability_score": case["best_recoverability_score"],
                     "best_attack_seconds": case["best_attack_seconds"],
                     "generation_seconds": case["generation_seconds"],
@@ -522,7 +499,7 @@ def write_csv(cases: list[dict], output_path: Path) -> None:
 
 def print_summary(cases: list[dict]) -> None:
     print(
-        f"{'case_id':<10} {'score':>8} {'attack':<18} {'window':<11} {'attack_s':>9} {'gen_s':>8}  params"
+        f"{'case_id':<10} {'score':>8} {'window':<11} {'attack_s':>9} {'gen_s':>8}  params"
     )
     for case in sorted(cases, key=lambda item: item["best_recoverability_score"]):
         params = case["params"]
@@ -531,7 +508,6 @@ def print_summary(cases: list[dict]) -> None:
         print(
             f"{case['case_id']:<10} "
             f"{case['best_recoverability_score']:>8.4f} "
-            f"{case['best_attack_algorithm']:<18} "
             f"{window_label:<11} "
             f"{case['best_attack_seconds']:>9.4f} "
             f"{case['generation_seconds']:>8.4f}  "
@@ -563,7 +539,6 @@ def main() -> None:
                     "font": args.font,
                 },
         "analysis": {
-            "algorithms": args.algorithms,
             "downscale": args.downscale,
             "block_size": args.block_size,
             "search_radius": args.search_radius,

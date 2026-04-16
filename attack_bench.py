@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark reconstruction attacks against GOTCHA videos.
-
-`block_flow_angle` is the primary attacker model. The remaining algorithms are
-kept as optional diagnostic baselines rather than the default benchmark path.
-"""
+"""Benchmark the block-flow reconstruction attack against GOTCHA videos."""
 
 from __future__ import annotations
 
@@ -12,7 +8,6 @@ import json
 import math
 import time
 from pathlib import Path
-from typing import Callable
 
 try:
     import imageio.v2 as imageio
@@ -32,23 +27,13 @@ DEFAULT_PAIR_STEP = 1
 DEFAULT_MAX_PAIRS = 24
 DEFAULT_WINDOW_SIZE = 0
 DEFAULT_WINDOW_STRIDE = 1
-PRIMARY_ATTACK_ALGORITHMS = ("block_flow_angle",)
-DIAGNOSTIC_BASELINE_ALGORITHMS = (
-    "mean",
-    "stddev",
-    "delta_energy",
-    "pca1",
-)
-AVAILABLE_ALGORITHMS = DIAGNOSTIC_BASELINE_ALGORITHMS + (
-    "block_flow_angle",
-)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the primary GOTCHA attack and optional diagnostic baselines, "
-            "save their output images, and log timing plus simple image metrics."
+            "Run the block-flow attack against a GOTCHA clip, "
+            "save the output image, and log timing plus simple image metrics."
         )
     )
     parser.add_argument("input", help="Input video path.")
@@ -61,13 +46,6 @@ def parse_args() -> argparse.Namespace:
         "--report-name",
         default="report.json",
         help="JSON report filename written inside --output-dir.",
-    )
-    parser.add_argument(
-        "--algorithms",
-        nargs="+",
-        choices=AVAILABLE_ALGORITHMS,
-        default=list(PRIMARY_ATTACK_ALGORITHMS),
-        help="Algorithms to run. Defaults to the primary attacker model only.",
     )
     parser.add_argument(
         "--downscale",
@@ -91,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         "--block-size",
         type=int,
         default=DEFAULT_BLOCK_SIZE,
-        help="Block size in pixels for the block-matching attacks.",
+        help="Block size in pixels for the block-matching attack.",
     )
     parser.add_argument(
         "--search-radius",
@@ -109,7 +87,7 @@ def parse_args() -> argparse.Namespace:
         "--max-pairs",
         type=int,
         default=DEFAULT_MAX_PAIRS,
-        help="Maximum frame pairs used by the block-matching attacks.",
+        help="Maximum frame pairs used by the block-matching attack.",
     )
     parser.add_argument(
         "--window-size",
@@ -154,7 +132,7 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.window_size < 0:
         raise SystemExit("--window-size must be 0 or greater.")
     if args.window_stride <= 0:
-        raise SystemExit("--window-stride must be greater than 0.")
+        raise SystemExit("--window-stride must be positive.")
 
 
 def rgb_to_grayscale(frame: np.ndarray) -> np.ndarray:
@@ -282,26 +260,6 @@ def save_grayscale_png(image: np.ndarray, output_path: Path) -> None:
     png.save(output_path)
 
 
-def mean_attack(frames: np.ndarray, _args: argparse.Namespace) -> np.ndarray:
-    return frames.mean(axis=0)
-
-
-def stddev_attack(frames: np.ndarray, _args: argparse.Namespace) -> np.ndarray:
-    return frames.std(axis=0)
-
-
-def pca1_attack(frames: np.ndarray, _args: argparse.Namespace) -> np.ndarray:
-    frame_count, height, width = frames.shape
-    matrix = frames.reshape(frame_count, height * width).astype(np.float64)
-    matrix = matrix - matrix.mean(axis=0, keepdims=True)
-    _, _, right_vectors = np.linalg.svd(matrix, full_matrices=False)
-    return np.abs(right_vectors[0]).reshape(height, width)
-
-
-def delta_energy_attack(frames: np.ndarray, _args: argparse.Namespace) -> np.ndarray:
-    return np.mean(np.abs(np.diff(frames, axis=0)), axis=0)
-
-
 def block_sum(image: np.ndarray, block_size: int) -> np.ndarray:
     blocks_y = image.shape[0] // block_size
     blocks_x = image.shape[1] // block_size
@@ -413,33 +371,6 @@ def block_flow_angle_attack(frames: np.ndarray, args: argparse.Namespace) -> np.
     )
 
 
-AlgorithmFn = Callable[[np.ndarray, argparse.Namespace], np.ndarray]
-
-
-ALGORITHMS: dict[str, tuple[str, AlgorithmFn]] = {
-    "mean": (
-        "Temporal average. Usually weak here, but it provides a baseline.",
-        mean_attack,
-    ),
-    "stddev": (
-        "Per-pixel temporal standard deviation to highlight motion-heavy regions.",
-        stddev_attack,
-    ),
-    "delta_energy": (
-        "Mean absolute difference between consecutive frames.",
-        delta_energy_attack,
-    ),
-    "pca1": (
-        "First principal dynamic component extracted from the frame stack.",
-        pca1_attack,
-    ),
-    "block_flow_angle": (
-        "Primary attacker model: tuned two-frame block-matching motion angle map.",
-        block_flow_angle_attack,
-    ),
-}
-
-
 def frame_windows(
     frame_count: int,
     window_size: int,
@@ -473,89 +404,81 @@ def frame_windows(
     return deduped
 
 
-def benchmark_algorithms(
+def run_attack(
     frames: np.ndarray,
     args: argparse.Namespace,
     output_dir: Path,
-) -> list[dict]:
-    results = []
+) -> dict:
     windows = frame_windows(
         frame_count=frames.shape[0],
         window_size=args.window_size,
         window_stride=args.window_stride,
         include_full_window=args.include_full_window,
     )
-    for algorithm_name in args.algorithms:
-        description, implementation = ALGORITHMS[algorithm_name]
-        best_result = None
-        window_results = []
+    best_result = None
+    window_results = []
 
-        for start_frame, end_frame in windows:
-            windowed_frames = frames[start_frame:end_frame]
-            start = time.perf_counter()
-            recovered = implementation(windowed_frames, args)
-            elapsed = time.perf_counter() - start
-            normalized = normalize_image(recovered)
-            metrics = image_metrics(normalized)
-            selection_score = readability_proxy_score(metrics)
-            candidate = {
-                "start_frame": start_frame,
-                "end_frame_exclusive": end_frame,
-                "frame_count": end_frame - start_frame,
-                "seconds": round(elapsed, 4),
-                "selection_score": selection_score,
-                "metrics": metrics,
-                "image": normalized,
-            }
-            window_results.append(
-                {
-                    key: value
-                    for key, value in candidate.items()
-                    if key != "image"
-                }
-            )
-            if best_result is None or candidate["selection_score"] > best_result["selection_score"]:
-                best_result = candidate
-
-        assert best_result is not None
-        output_path = output_dir / f"{algorithm_name}.png"
-        save_grayscale_png(best_result["image"], output_path)
-        results.append(
+    for start_frame, end_frame in windows:
+        windowed_frames = frames[start_frame:end_frame]
+        start = time.perf_counter()
+        recovered = block_flow_angle_attack(windowed_frames, args)
+        elapsed = time.perf_counter() - start
+        normalized = normalize_image(recovered)
+        metrics = image_metrics(normalized)
+        selection_score = readability_proxy_score(metrics)
+        candidate = {
+            "start_frame": start_frame,
+            "end_frame_exclusive": end_frame,
+            "frame_count": end_frame - start_frame,
+            "seconds": round(elapsed, 4),
+            "selection_score": selection_score,
+            "metrics": metrics,
+            "image": normalized,
+        }
+        window_results.append(
             {
-                "algorithm": algorithm_name,
-                "description": description,
-                "seconds": best_result["seconds"],
-                "output_image": str(output_path),
-                "metrics": best_result["metrics"],
-                "window_selection_score": best_result["selection_score"],
-                "best_window": {
-                    "start_frame": best_result["start_frame"],
-                    "end_frame_exclusive": best_result["end_frame_exclusive"],
-                    "frame_count": best_result["frame_count"],
-                },
-                "evaluated_windows": window_results,
+                key: value
+                for key, value in candidate.items()
+                if key != "image"
             }
         )
-    return results
+        if best_result is None or candidate["selection_score"] > best_result["selection_score"]:
+            best_result = candidate
+
+    assert best_result is not None
+    output_path = output_dir / "block_flow_angle.png"
+    save_grayscale_png(best_result["image"], output_path)
+    return {
+        "algorithm": "block_flow_angle",
+        "seconds": best_result["seconds"],
+        "output_image": str(output_path),
+        "metrics": best_result["metrics"],
+        "window_selection_score": best_result["selection_score"],
+        "best_window": {
+            "start_frame": best_result["start_frame"],
+            "end_frame_exclusive": best_result["end_frame_exclusive"],
+            "frame_count": best_result["frame_count"],
+        },
+        "evaluated_windows": window_results,
+    }
 
 
-def print_summary(results: list[dict]) -> None:
+def print_summary(result: dict) -> None:
+    metrics = result["metrics"]
+    best_window = result["best_window"]
+    window_label = f"{best_window['start_frame']}:{best_window['end_frame_exclusive'] - 1}"
     print(
         f"{'algorithm':<22} {'window':<11} {'seconds':>8} {'score':>8} {'otsu':>8}  output"
     )
-    for result in results:
-        metrics = result["metrics"]
-        best_window = result["best_window"]
-        window_label = f"{best_window['start_frame']}:{best_window['end_frame_exclusive'] - 1}"
-        print(
-            f"{result['algorithm']:<22} "
-            f"{window_label:<11} "
-            f"{result['seconds']:>8.4f} "
-            f"{result['window_selection_score']:>8.4f} "
-            f"{metrics['otsu_separation']:>8.4f} "
-            f"  "
-            f"{result['output_image']}"
-        )
+    print(
+        f"{'block_flow_angle':<22} "
+        f"{window_label:<11} "
+        f"{result['seconds']:>8.4f} "
+        f"{result['window_selection_score']:>8.4f} "
+        f"{metrics['otsu_separation']:>8.4f} "
+        f"  "
+        f"{result['output_image']}"
+    )
 
 
 def main() -> None:
@@ -573,7 +496,7 @@ def main() -> None:
         frame_step=args.frame_step,
         max_frames=args.max_frames,
     )
-    results = benchmark_algorithms(frames, args, output_dir)
+    result = run_attack(frames, args, output_dir)
     report_path = output_dir / args.report_name
     report = {
         "input": str(input_path),
@@ -590,10 +513,10 @@ def main() -> None:
             "include_full_window": args.include_full_window,
         },
         "video": video_summary,
-        "results": results,
+        "result": result,
     }
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print_summary(results)
+    print_summary(result)
     print(f"\nWrote report to {report_path}")
 
 
