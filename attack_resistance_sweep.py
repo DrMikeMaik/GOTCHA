@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sweep GOTCHA generator settings and rank them by attack recoverability."""
+"""Sweep GOTCHA generator settings and rank them by attack resistance."""
 
 from __future__ import annotations
 
@@ -39,14 +39,14 @@ from text_noise_video import (
 )
 
 
-DEFAULT_SWEEP_OUTPUT_DIR = "attack_sweep"
+DEFAULT_SWEEP_OUTPUT_DIR = "attack_resistance_sweep"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Generate a grid of GOTCHA parameter variants, run the configured "
-            "primary attack plus optional diagnostics, and rank cases by recoverability."
+            "primary attack plus optional diagnostics, and rank cases by attack resistance."
         )
     )
     parser.add_argument("--text", default=DEFAULT_TEXT, help="Text to render in generated cases.")

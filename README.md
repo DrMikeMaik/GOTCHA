@@ -46,30 +46,38 @@ process. So if you want to take the journey follow the links.
 
 ## Try It Yourself
 
-Install the dependencies:
-
 ```bash
-pip install numpy pillow imageio imageio-ffmpeg
+poetry install
 ```
 
 Generate a clip with the baseline generator (the one that got cracked):
 
 ```bash
-python text_noise_video.py --text HELLO --output hello.mp4
+poetry run python text_noise_video.py --text HELLO --grain 16 --output hello.mp4
 ```
 
 Now attack it:
 
 ```bash
-python attack_bench.py hello.mp4 --output-dir attack_runs/hello
+poetry run python attack_bench.py hello.mp4 --output-dir attack_runs/hello
 ```
 
 Open `attack_runs/hello/block_flow_angle.png` — the word is right there.
 
+If you want the ranked montage workflow that sweeps many frame pairs for one
+existing video, use:
+
+```bash
+poetry run python attack_pair_sweep.py hello.mp4 --output-dir sweep_runs/hello
+```
+
+That writes a ranked CSV/JSON summary plus `top12_montage.png` under
+`sweep_runs/hello`.
+
 Try the defense generator instead:
 
 ```bash
-python text_noise_video_defense.py --random-digits --grain 9 --duration 10 --output defended.mp4
+poetry run python text_noise_video_defense.py --random-digits --background-grain 8 --text-grain 16 --output defended.mp4
 ```
 
 Attack that one and compare the results. Full flag reference in
