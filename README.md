@@ -8,7 +8,8 @@ number, readable only by humans? A single frame looks like pure static. But
 when the video plays, your visual system groups the motion and the number pops
 out.
 
-<video src="assets/version_1.mp4" controls muted playsinline width="720">
+Direct MP4 link: [assets/version_1.mp4](assets/version_1.mp4)
+<video src="https://github.com/user-attachments/assets/a347d553-7749-4d02-b79b-76f2135326a1" controls muted playsinline width="720">
   Your browser does not support embedded video.
 </video>
 
@@ -33,8 +34,9 @@ never shows all digits at once, so no single
 frame pair can recover the full secret. But sweeping across all pairs still
 lets the bot piece together the whole number.
 
-<video src="assets/version_2.mp4" controls muted playsinline width="720">
-  Your browser does not support embedded video.
+Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
+<video src="https://github.com/user-attachments/assets/a6b1617e-8891-4e32-a6f0-8557fbaf0aca" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
 </video>
 
 <details>
@@ -52,8 +54,11 @@ pixel size makes edges easy to perceive. But individual frames are hard to
 OCR even though you can almost see the digits, and the background palette
 cycling completely defeats block-flow angle analysis.
 
-<video src="assets/version_3.mp4" controls muted playsinline width="720">
-  Your browser does not support embedded video.
+Direct MP4 link (Full resolution): [assets/version_3.mp4](assets/version_3.mp4)
+<video src="https://github.com/user-attachments/assets/a61ac468-5b0c-465f-9f25-db52ec732934" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
+
+
 </video>
 
 <details>
