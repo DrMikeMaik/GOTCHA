@@ -53,7 +53,7 @@ poetry install
 Generate a clip with the baseline generator (the one that got cracked):
 
 ```bash
-poetry run python text_noise_video.py --text HELLO --grain 16 --output hello.mp4
+poetry run python generate_baseline.py --text HELLO --grain 16 --output hello.mp4
 ```
 
 Now attack it:
@@ -77,7 +77,7 @@ That writes a ranked CSV/JSON summary plus `top12_montage.png` under
 Try the defense generator instead:
 
 ```bash
-poetry run python text_noise_video_defense.py --random-digits --background-grain 8 --text-grain 16 --output defended.mp4
+poetry run python generate_defense.py --random-digits --background-grain 8 --text-grain 16 --output defended.mp4
 ```
 
 Attack that one and compare the results. Full flag reference in

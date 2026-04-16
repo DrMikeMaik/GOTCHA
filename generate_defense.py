@@ -13,13 +13,12 @@ from __future__ import annotations
 import argparse
 import itertools
 import secrets
-from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from text_noise_video import (
+from generate_baseline import (
     DEFAULT_DURATION,
     DEFAULT_FEATHER,
     DEFAULT_FONT_SIZE,
@@ -38,6 +37,7 @@ from text_noise_video import (
     render_text_image,
     resolve_output_path,
     shift_mask,
+    text_drift_offsets,
     write_animation,
 )
 
@@ -245,24 +245,6 @@ def resolve_render_text(args: argparse.Namespace) -> str:
 def frame_count_from_args(args: argparse.Namespace) -> int:
     return max(1, int(round(args.duration * args.fps)))
 
-
-def text_drift_offsets(
-    frame_count: int,
-    fps: int,
-    drift: float,
-    speed: float,
-) -> Iterable[tuple[int, int]]:
-    if drift <= 0 or speed <= 0:
-        for _ in range(frame_count):
-            yield 0, 0
-        return
-
-    phase_step = (2.0 * np.pi * speed) / fps
-    for index in range(frame_count):
-        phase = index * phase_step
-        x_offset = int(round(np.sin(phase) * drift))
-        y_offset = int(round(np.cos(phase * 0.73 + np.pi / 6.0) * drift * 0.45))
-        yield x_offset, y_offset
 
 
 def expand_tile_map(tile_values: np.ndarray, tile_size: int, height: int, width: int) -> np.ndarray:

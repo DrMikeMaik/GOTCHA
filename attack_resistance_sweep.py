@@ -20,7 +20,7 @@ from attack_bench import (
     resize_grayscale,
     rgb_to_grayscale,
 )
-from text_noise_video import (
+from generate_baseline import (
     DEFAULT_DURATION,
     DEFAULT_FEATHER,
     DEFAULT_FONT_SIZE,
