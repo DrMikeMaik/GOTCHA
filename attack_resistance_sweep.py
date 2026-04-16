@@ -21,14 +21,11 @@ from attack_pair_sweep import analyze_candidates
 from generate_baseline import (
     DEFAULT_DURATION,
     DEFAULT_FEATHER,
-    DEFAULT_FONT_SIZE,
     DEFAULT_FPS,
     DEFAULT_GRAIN,
-    DEFAULT_HEIGHT,
     DEFAULT_TEXT,
     DEFAULT_TEXT_DRIFT,
     DEFAULT_TEXT_DRIFT_SPEED,
-    DEFAULT_WIDTH,
     write_animation,
 )
 from generate_defense import (
