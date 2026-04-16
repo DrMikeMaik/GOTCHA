@@ -21,14 +21,67 @@ out.
 
 I shared it publicly and confidently claimed that biology still has a leg up
 on technology. Within hours, someone in the comments cracked it using
-block-matching optical flow. I personally dug into this attack vector 
-and realized that the algorithm only required two frames to retrieve
+block-matching optical flow. I personally dug into this attack vector
+and realized that the algorithm only required **two frames** to retrieve
 the secret message.
 
+![Version 1 attack result](assets/version_1_attack.png)
+
 Instead of walking away, I spent the next few weeks trying to make it harder
-to break. Some ideas were useless. Some were promising. None of them made it
-truly bot-proof. But I learned a lot, and this repo tells the story of that
-process. So if you want to take the journey follow the links.
+to break. The second version adds one more digit and 
+never shows all digits at once, so no single
+frame pair can recover the full secret. But sweeping across all pairs still
+lets the bot piece together the whole number.
+
+<video src="assets/version_2.mp4" controls muted playsinline width="720">
+  Your browser does not support embedded video.
+</video>
+
+<details>
+<summary>Reveal</summary>
+
+**80511**
+
+</details>
+
+![Version 2 attack result](assets/version_2_attack.png)
+
+The third version uses different grain sizes for the text and background.
+The mismatch is actually pleasant for a human viewer — the difference in
+pixel size makes edges easy to perceive. But individual frames are hard to
+OCR even though you can almost see the digits, and the background palette
+cycling completely defeats block-flow angle analysis.
+
+<video src="assets/version_3.mp4" controls muted playsinline width="720">
+  Your browser does not support embedded video.
+</video>
+
+<details>
+<summary>Reveal</summary>
+
+**86217**
+
+</details>
+
+The attack recovered nothing — pure noise.
+
+![Version 3 attack result](assets/version_3_attack.png)
+
+Can it be broken? Absolutely — just not by these algorithms. Single-frame
+analysis with OCR would probably be a more effective angle, and I expect
+someone will point that out eventually. But I learned a lot, and this repo
+tells the story of that process. If you want to take the journey follow
+the links.
+
+## Tools
+
+| File | What it does |
+|------|-------------|
+| `generate_baseline.py` | Original generator — two sliding noise fields. Trivially crackable. |
+| `generate_defense.py` | Defense generator — tile-based motion palette with phase-sliced reveals. |
+| `attack_bench.py` | Run the block-flow attack on a single video file. |
+| `attack_pair_sweep.py` | Sweep consecutive frame pairs across a video and rank the best attacks. |
+| `attack_resistance_sweep.py` | Generate a grid of defense settings, attack each, and rank by resistance. Saves videos for the strongest and weakest cases. |
 
 ## The Story
 
