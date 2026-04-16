@@ -33,7 +33,7 @@ from attack_bench import (
 )
 
 
-DEFAULT_PAIR_STEPS = "1,2,3,4,5,6"
+DEFAULT_PAIR_STEPS = "1"
 DEFAULT_TOP_K = 12
 
 
