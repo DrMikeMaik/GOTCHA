@@ -208,6 +208,8 @@ tmp/
 
 # Local experiment outputs
 tmp/
+attack_runs/
+sweep_runs/
 .cursorignore
 .cursorindexingignore
 
