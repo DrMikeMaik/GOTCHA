@@ -2,243 +2,208 @@
 
 **G**liding **O**ptical **T**rick to **C**hallenge **H**umans vs **A**lgorithms
 
-GOTCHA is a small perception demo: a short code or word is hidden inside moving
-noise. A single frame looks like nonsense, but over time humans can often read
-the message quickly because the visual system is good at grouping motion.
+I saw a cool video about a video game noise shader and thought: what if
+overlapping random noise masks with orthogonal movement could hide a secret
+number, readable only by humans? A single frame looks like pure static. But
+when the video plays, your visual system groups the motion and the number pops
+out.
 
-The project now includes:
+Direct MP4 link: [assets/version_1.mp4](assets/version_1.mp4)
+<video src="https://github.com/user-attachments/assets/a347d553-7749-4d02-b79b-76f2135326a1" controls muted playsinline width="720">
+  Your browser does not support embedded video.
+</video>
 
-- a baseline generator, where text and background use different motion fields
-- a defense-oriented generator, which tries to keep human readability while
-  making automated recovery slower and less direct
-- attack tooling for benchmarking reconstruction attempts against generated
-  clips
+<details>
+<summary>Reveal</summary>
 
-This is a toy experiment, not a serious CAPTCHA product.
+**1544**
 
-## Classic Example
+</details>
 
-Direct MP4 link: [assets/secret.mp4](assets/secret.mp4)
+I shared it publicly and confidently claimed that biology still has a leg up
+on technology. Within hours, someone in the comments cracked it using
+block-matching optical flow. I personally dug into this attack vector
+and realized that the algorithm only required **two frames** to retrieve
+the secret message.
 
-<video src="https://github.com/user-attachments/assets/094cc537-18a5-4854-b6d2-7a48b80a8a9f" controls muted playsinline width="720">
+![Version 1 attack result](assets/version_1_attack.png)
+
+Instead of walking away, I spent the next few weeks trying to make it harder
+to break. The second version adds one more digit and 
+never shows all digits at once, so no single
+frame pair can recover the full secret. But sweeping across all pairs still
+lets the bot piece together the whole number.
+
+Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
+<video src="https://github.com/user-attachments/assets/a6b1617e-8891-4e32-a6f0-8557fbaf0aca" controls muted playsinline width="720">
   Your browser does not support embedded video. Use the direct link above.
 </video>
 
 <details>
 <summary>Reveal</summary>
 
-**TIMBER**
+**80511**
 
 </details>
 
-## Why It Works
+![Version 2 attack result](assets/version_2_attack.png)
 
-- Each frame is built from noise, not explicit text pixels.
-- Humans are good at motion segmentation and temporal completion.
-- A screenshot is usually not enough; the message emerges across time.
-- Simple image statistics can miss what a human sees immediately.
+The third version uses different grain sizes for the text and background.
+The mismatch is actually pleasant for a human viewer — the difference in
+pixel size makes edges easy to perceive. But individual frames are hard to
+OCR even though you can almost see the digits, and the background palette
+cycling completely defeats block-flow angle analysis.
 
-In the baseline generator, this effect comes from a clean motion partition:
-background noise moves one way and the text region moves another way. That is
-good for humans, but it is also exactly what a tuned block-flow attack can
-exploit.
+Direct MP4 link (Full resolution): [assets/version_3.mp4](assets/version_3.mp4)
+<video src="https://github.com/user-attachments/assets/a61ac468-5b0c-465f-9f25-db52ec732934" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
 
-## Generators
 
-### Baseline Generator
+</video>
 
-Use the original generator when you want the clearest motion-pop effect:
+<details>
+<summary>Reveal</summary>
 
-```bash
-poetry run python text_noise_video.py --text TIMBER --output timber.mp4
-```
+**86217**
 
-Without Poetry:
+</details>
 
-```bash
-pip install numpy pillow imageio imageio-ffmpeg
-python text_noise_video.py --text TIMBER --output timber.mp4
-```
+The attack recovered nothing — pure noise.
 
-See all options with:
+![Version 3 attack result](assets/version_3_attack.png)
 
-```bash
-python text_noise_video.py --help
-```
+Can it be broken? Absolutely — just not by these algorithms. Single-frame
+analysis with OCR would probably be a more effective angle, and I expect
+someone will point that out eventually. But I learned a lot, and this repo
+tells the story of that process. If you want to take the journey follow
+the links.
 
-Useful baseline flags:
+## Tools
 
-- `--grain` to make the noise coarser or finer
-- `--text-drift` and `--text-drift-speed` to move the whole word around
-- `--border-width`, `--border-style`, `--border-color` for outlines
-- `--font` to use a specific `.ttf` or `.otf` font file
+| File | What it does |
+|------|-------------|
+| `generate_baseline.py` | Original generator — two sliding noise fields. Trivially crackable. |
+| `generate_defense.py` | Defense generator — tile-based motion palette with phase-sliced reveals. |
+| `attack_bench.py` | Run the block-flow attack on a single video file. |
+| `attack_pair_sweep.py` | Sweep consecutive frame pairs across a video and rank the best attacks. |
+| `attack_resistance_sweep.py` | Generate a grid of defense settings, attack each, and rank by resistance. Saves videos for the strongest and weakest cases. |
 
-### Defense Generator
-
-The defense variant tries to reduce the clean text-shaped motion partition that
-the baseline leaks.
+## Try It Yourself
 
 ```bash
-poetry run python text_noise_video_defense.py --text TIMBER --output timber_defense.mp4
+poetry install
 ```
 
-To generate a hidden 4-digit code without printing it to stdout:
+Generate a clip with the baseline generator (the one that got cracked):
 
 ```bash
-poetry run python text_noise_video_defense.py \
-  --random-digits \
-  --grain 9 \
-  --duration 10 \
-  --output secret_digits.mp4
+poetry run python generate_baseline.py --text HELLO --grain 16 --output hello.mp4
 ```
 
-The defense generator differs from the baseline in three main ways:
-
-- local motion comes from a shared palette across the whole frame
-- the text is split into phase-sliced reveal groups instead of one coherent
-  motion region
-- whole digits can stay intact while the reveal schedule changes which groups
-  are visible over time
-
-Useful defense flags:
-
-- `--random-digits` to generate a hidden 4-digit code internally
-- `--grain` to control the size of the moving noise chunks
-- `--phase-mode` to choose between `components` and `bands`
-- `--phase-count`, `--active-phases`, `--phase-hold` to tune how much of the
-  text is visible at once
-- `--schedule-mode` to choose between the old deterministic cycle and the newer
-  randomized reveal schedule
-- `--schedule-span` to control how many phase windows a randomized visible
-  subset tends to persist
-- `--background-cycle-step` and `--background-cycle-hold` to add or disable
-  background motion cycling
-
-The current preferred setup keeps whole digits readable and makes the reveal
-pattern less predictable, rather than slicing glyphs into smaller fragments.
-
-## Attack Tooling
-
-### Attack Bench
-
-`attack_bench.py` runs reconstruction attacks against a clip and records output
-images, timings, and simple image metrics.
-
-Algorithms currently included:
-
-- `mean`
-- `stddev`
-- `delta_energy`
-- `pca1`
-- `block_flow_angle`
-
-In practice, only `block_flow_angle` has been a serious recovery path in this
-repo. The other algorithms are still available as diagnostics, but they should
-not be treated as the main threat model.
-
-Example:
+Now attack it:
 
 ```bash
-python attack_bench.py assets/secret.mp4 --output-dir attack_runs/secret
+poetry run python attack_bench.py hello.mp4 --output-dir attack_runs/hello
 ```
 
-Short windows are often more revealing than whole-clip aggregation:
+Open `attack_runs/hello/block_flow_angle.png` — the word is right there.
+
+Sweep all frame pairs for a ranked montage:
 
 ```bash
-python attack_bench.py assets/secret.mp4 \
-  --window-size 20 \
-  --window-stride 1 \
-  --include-full-window \
-  --output-dir attack_runs/windowed
+poetry run python attack_pair_sweep.py hello.mp4 --output-dir sweep_runs/hello
 ```
 
-### Attack Sweep
-
-`attack_sweep.py` generates many variants, runs the configured attack set, and
-ranks them by recoverability.
-
-It now defaults to `block_flow_angle` only, because that is the attacker model
-that actually mattered in testing.
-
-Example:
+Try the defense generator instead:
 
 ```bash
-python attack_sweep.py \
-  --text TIMBER \
-  --grains 2,3,4 \
-  --text-drifts 80,200,320 \
-  --window-size 20 \
-  --window-stride 1 \
-  --include-full-window \
-  --output-dir sweep_runs/timber_windowed
+poetry run python generate_defense.py --random-digits --background-grain 8 --text-grain 16 --output defended.mp4
 ```
 
-## What We Learned
+Attack that one and compare the results.
 
-The baseline generator is easy for humans because it leaks a stable motion
-partition. A tuned two-frame block-flow attack can recover readable structure
-from as few as two frames.
+<details>
+<summary>Flag reference</summary>
 
-The weaker attacks mostly failed. `mean`, `stddev`, `delta_energy`, and `pca1`
-were useful as diagnostics, but not as practical recovery tools.
+### generate_baseline.py
 
-The real attacker model is:
+| Flag | What it does |
+|------|-------------|
+| `--grain` | Noise block size in pixels (smaller = finer noise) |
+| `--duration` | Clip length in seconds |
+| `--speed` | How fast the noise slides (pixels per frame) |
+| `--font-size` | Text size in pixels |
+| `--text-drift` | Total pixels the word oscillates over time |
+| `--text-drift-speed` | How fast the word oscillates (cycles per second) |
+| `--feather` | Gaussian blur radius on the text mask edge |
+| `--font` | Path to a `.ttf` or `.otf` font file |
+| `--seed` | Fix the random seed for reproducibility |
+| `--width`, `--height` | Output resolution (default 1920x1080) |
+| `--fps` | Frame rate (default 30) |
 
-- tuned two-frame `block_flow_angle`
-- small blocks and short frame gaps
-- scanning many candidate frame pairs
-- combining multiple top pair artifacts when a single image is incomplete
+### generate_defense.py
 
-This image shows how clean the baseline leak can be when motion labels are
-recovered:
+| Flag | What it does |
+|------|-------------|
+| `--random-digits` | Generate a random 5-digit code internally |
+| `--grain` | Noise block size (default 3) |
+| `--background-grain` | Separate grain for background (defaults to `--grain`) |
+| `--text-grain` | Separate grain for text region (defaults to `--grain`) |
+| `--tile-size` | Motion tile size in pixels (default 12) |
+| `--palette` | Motion vector palette, e.g. `"-2,0;0,-2;2,0;0,2"` |
+| `--phase-mode` | `components` (whole digits) or `bands` (diagonal slices) |
+| `--phase-count` | Number of reveal groups |
+| `--active-phases` | How many groups are visible at once |
+| `--phase-hold` | Frames each phase pattern holds before rotating |
+| `--schedule-mode` | `randomized` (default) or `cycle` (deterministic) |
+| `--schedule-span` | How many windows a visible subset persists |
+| `--background-cycle-step` | Palette rotation step for background (0 = off) |
+| `--background-cycle-hold` | Frames between background palette rotations |
 
-![Baseline block-flow labels](assets/readme/blockflow_motion_labels.png)
+### attack_bench.py
 
-This montage shows the fragmented evidence produced by the defense variant
-during a blind two-frame attack:
+| Flag | What it does |
+|------|-------------|
+| `--downscale` | Scale factor before analysis (default 0.25) |
+| `--block-size` | Block size for block matching (default 8) |
+| `--search-radius` | Search radius for block matching (default 3) |
+| `--pair-step` | Frame gap between the two frames in a pair (default 1) |
+| `--max-pairs` | Frame pairs to average (default 1) |
+| `--window-size` | Sliding window length in frames (0 = full clip) |
+| `--window-stride` | Stride between windows (default 1) |
+| `--include-full-window` | Also run full-clip analysis alongside windows |
 
-![Blind pair montage](assets/readme/blind_pair_montage.png)
+### attack\_pair\_sweep.py
 
-### Timing Takeaway
+| Flag | What it does |
+|------|-------------|
+| `--pair-steps` | Comma-separated pair gaps to sweep (default 1) |
+| `--window-size` | Frame window length (0 = pair_step + 1) |
+| `--window-stride` | Stride between candidate windows (default 1) |
+| `--include-full-window` | Also evaluate the full clip |
+| `--top-k` | How many top results to save and montage (default 12) |
 
-On the better defense variants we tested:
+### attack\_resistance\_sweep.py
 
-- humans typically read a 4-digit code in about `10-20s`
-- the generic attack suite mostly failed to recover the answer directly
-- the strongest practical recovery path was still a targeted two-frame
-  `block_flow_angle` scan plus aggregation of partial clues
-- one blind recovery pipeline took about `95s` end-to-end and still guessed the
-  code incorrectly on the first attempt
+| Flag | What it does |
+|------|-------------|
+| `--background-grains` | Comma-separated background grain values to sweep |
+| `--text-grains` | Comma-separated text grain values to sweep |
+| `--tile-sizes` | Comma-separated tile sizes to sweep |
+| `--phase-counts` | Comma-separated phase counts to sweep |
+| `--active-phases-values` | Comma-separated active phase counts to sweep |
+| `--phase-modes` | Comma-separated phase modes to sweep |
+| `--schedule-modes` | Comma-separated schedule modes to sweep |
+| `--save-top-k` | Save videos for top K hardest and easiest cases (default 3) |
 
-That is useful, but it is not the same as saying the defenses really stopped
-bots. The latest variants mostly filtered out weak attacks. They did not
-meaningfully defeat the only attack that consistently worked.
+All tools support `--help` for the full flag list.
 
-## Honest Positioning
-
-This project is best described as:
-
-- human-friendly relative to naive machine perception
-- still attackable by tuned computer-vision pipelines
-- useful as a perception experiment, not as a security guarantee
-
-The honest claim is:
-
-> Humans read the code directly from motion; machines can recover it too, but
-> only with a more specialized pipeline, centered on tuned two-frame block
-> matching rather than generic frame statistics.
-
-## Repo Layout
-
-- `text_noise_video.py`: baseline generator
-- `text_noise_video_defense.py`: defense-oriented generator
-- `attack_bench.py`: reconstruction benchmark
-- `attack_sweep.py`: generator-side parameter sweep
-- `assets/`: example clips and README images
+</details>
 
 ## Inspiration
 
-This project was directly inspired by [this YouTube video](https://www.youtube.com/watch?v=RNhiT-SmR1Q).
+This project was directly inspired by
+[this YouTube video](https://www.youtube.com/watch?v=RNhiT-SmR1Q).
 
 ## License
 

@@ -202,12 +202,8 @@ cython_debug/
 # Local project artifacts
 .DS_Store
 tmp/
-
-# macOS Finder metadata
-.DS_Store
-
-# Local experiment outputs
-tmp/
+attack_runs/
+sweep_runs/
 .cursorignore
 .cursorindexingignore
 

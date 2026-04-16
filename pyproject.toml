@@ -1,7 +1,7 @@
 [project]
 name = "noise-captcha"
 version = "0.1.0"
-description = "Single-file proof of concept for motion-based hidden-text animations"
+description = "Hide text in visual noise so humans can read it but algorithms can't"
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
 authors = [{ name = "Mike Maik" }]
