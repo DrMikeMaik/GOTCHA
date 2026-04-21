@@ -205,9 +205,10 @@ Attack that one and compare the results.
 |------|-------------|
 | `--kernel` | Local-mean kernel size for the deviation step (default 3) |
 | `--sigma` | Gaussian blur strength for smoothing the deviation field (default 8) |
-| `--aggregation` | How to combine per-frame signals in video mode: `max` or `mean` (default max) |
 | `--frame-step` | Keep every Nth frame from video input (default 1) |
 | `--max-frames` | Maximum frames to process, 0 means all (default 0) |
+| `--top-k` | How many highest-scoring frames to save and montage (default 12) |
+| `--montage-cols` | Number of columns in the top-k montage (default 4) |
 | `--diagnostic` | Save intermediate stages for the first frame |
 
 ### attack\_resistance\_sweep.py
