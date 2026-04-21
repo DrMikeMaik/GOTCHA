@@ -73,14 +73,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--background-grain",
         type=int,
-        default=None,
-        help="Optional noise grain for background-local-motion fields. Defaults to --grain.",
+        default=8,
+        help="Noise grain for background-local-motion fields (default 8).",
     )
     parser.add_argument(
         "--text-grain",
         type=int,
-        default=None,
-        help="Optional noise grain for text-local-motion fields. Defaults to --grain.",
+        default=16,
+        help="Noise grain for text-local-motion fields (default 16).",
     )
     parser.add_argument("--feather", type=float, default=DEFAULT_FEATHER)
     parser.add_argument("--text-drift", type=float, default=DEFAULT_TEXT_DRIFT)
@@ -189,9 +189,9 @@ def validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("Font size must be greater than 0.")
     if args.grain <= 0:
         raise SystemExit("Grain must be greater than 0.")
-    if args.background_grain is not None and args.background_grain <= 0:
+    if args.background_grain <= 0:
         raise SystemExit("Background grain must be greater than 0.")
-    if args.text_grain is not None and args.text_grain <= 0:
+    if args.text_grain <= 0:
         raise SystemExit("Text grain must be greater than 0.")
     if args.feather < 0:
         raise SystemExit("Feather must be 0 or greater.")
@@ -730,8 +730,8 @@ def build_animation(args: argparse.Namespace) -> Iterable[np.ndarray]:
     phase_step_count = (frame_count + args.phase_hold - 1) // args.phase_hold
     rng = np.random.default_rng(args.seed)
     palette = args.palette_vectors
-    background_grain = args.grain if args.background_grain is None else args.background_grain
-    text_grain = args.grain if args.text_grain is None else args.text_grain
+    background_grain = args.background_grain
+    text_grain = args.text_grain
     background_field_stack = build_palette_fields(
         rng,
         args.height,

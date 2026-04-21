@@ -145,20 +145,35 @@ Attack that one and compare the results.
 
 | Flag | What it does |
 |------|-------------|
-| `--random-digits` | Generate a random 5-digit code internally |
-| `--grain` | Noise block size (default 3) |
-| `--background-grain` | Separate grain for background (defaults to `--grain`) |
-| `--text-grain` | Separate grain for text region (defaults to `--grain`) |
+| `--text` | Text to render (default `VISIBLE`) |
+| `--random-digits` | Generate a random 5-digit code internally instead of using `--text` |
+| `--output` | Output file path |
+| `--width`, `--height` | Output resolution (default 1920x1080) |
+| `--fps` | Frame rate (default 30) |
+| `--duration` | Clip length in seconds (default 5) |
+| `--font-size` | Text size in pixels (default 340) |
+| `--font` | Path to a `.ttf` or `.otf` font file |
+| `--seed` | Fix the random seed for reproducibility |
+| `--gif` | Write GIF output instead of MP4 |
+| `--grain` | Base noise block size in pixels (default 3) |
+| `--background-grain` | Noise grain for background fields (default 8) |
+| `--text-grain` | Noise grain for text fields (default 16) |
+| `--feather` | Gaussian blur radius on the text mask edge (default 1.25) |
+| `--text-drift` | Maximum whole-text drift in pixels (default 200) |
+| `--text-drift-speed` | Drift speed in cycles per second (default 0.16) |
 | `--tile-size` | Motion tile size in pixels (default 12) |
 | `--palette` | Motion vector palette, e.g. `"-2,0;0,-2;2,0;0,2"` |
-| `--phase-mode` | `components` (whole digits) or `bands` (diagonal slices) |
-| `--phase-count` | Number of reveal groups |
-| `--active-phases` | How many groups are visible at once |
-| `--phase-hold` | Frames each phase pattern holds before rotating |
-| `--schedule-mode` | `randomized` (default) or `cycle` (deterministic) |
-| `--schedule-span` | How many windows a visible subset persists |
-| `--background-cycle-step` | Palette rotation step for background (0 = off) |
-| `--background-cycle-hold` | Frames between background palette rotations |
+| `--text-vector-index` | Base palette index used to seed the text-phase vector cycle (default 1) |
+| `--background-vector-index` | Optional fixed palette index for all background tiles |
+| `--phase-mode` | `components` (whole digits), `bands` (diagonal slices), or `glyphs` (individual characters) |
+| `--phase-count` | Number of reveal groups (default 4) |
+| `--active-phases` | How many groups are visible at once (default 3) |
+| `--phase-hold` | Frames each phase pattern holds before rotating (default 5) |
+| `--schedule-mode` | `randomized` (default), `cycle`, `overlap_cycle`, or `pair_safe_random` |
+| `--schedule-span` | How many windows a visible subset persists (default 3) |
+| `--pair-safe-max-gap` | Maximum frame gap the pair-safe scheduler protects against (default 6) |
+| `--background-cycle-step` | Palette rotation step for background, 0 disables (default 0) |
+| `--background-cycle-hold` | Frames between background palette rotations (default 12) |
 
 ### attack_bench.py
 
