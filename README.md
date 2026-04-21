@@ -86,6 +86,7 @@ the links.
 | `generate_defense.py` | Defense generator — tile-based motion palette with phase-sliced reveals. |
 | `attack_bench.py` | Run the block-flow attack on a single video file. |
 | `attack_pair_sweep.py` | Sweep consecutive frame pairs across a video and rank the best attacks. |
+| `attack_variance.py` | Variance-based static-frame attack. Exploits grain-size mismatch without temporal information. |
 | `attack_resistance_sweep.py` | Generate a grid of defense settings, attack each, and rank by resistance. Saves videos for the strongest and weakest cases. |
 
 ## Try It Yourself
@@ -197,6 +198,17 @@ Attack that one and compare the results.
 | `--window-stride` | Stride between candidate windows (default 1) |
 | `--include-full-window` | Also evaluate the full clip |
 | `--top-k` | How many top results to save and montage (default 12) |
+
+### attack\_variance.py
+
+| Flag | What it does |
+|------|-------------|
+| `--kernel` | Local-mean kernel size for the deviation step (default 3) |
+| `--sigma` | Gaussian blur strength for smoothing the deviation field (default 8) |
+| `--aggregation` | How to combine per-frame signals in video mode: `max` or `mean` (default max) |
+| `--frame-step` | Keep every Nth frame from video input (default 1) |
+| `--max-frames` | Maximum frames to process, 0 means all (default 0) |
+| `--diagnostic` | Save intermediate stages for the first frame |
 
 ### attack\_resistance\_sweep.py
 
