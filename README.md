@@ -10,7 +10,7 @@ system groups the motion and the number pops out.
 ## Version 1:
 
 This version uses a simple concept. Orthogonal noise masks cause each frame 
-to look like noise but the motions allows humans to see the message.
+to look like noise but the motion allows humans to see the message.
 
 ### version 1 video:
 
@@ -64,7 +64,7 @@ Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
 ## Version 3:
 
 The third version introduced a different background noise pattern.
-While completely conquering the block flow attack, it really lost
+While completely conquering the block-flow attack, it really lost
 its human readability. So what's the point of fooling an algorithm 
 if we as humans also struggle with it?
 
@@ -88,36 +88,39 @@ Direct MP4 link: [assets/version_3.mp4](assets/version_3.mp4)
 
 ## Version 4:
 
-Starting to get frustrated I tried one more thing. I changed the grain sizes between the background and text.
-The mismatch is actually reasonably readable for a human viewer. The difference in
-pixel size makes edges easier to perceive. But individual frames are hard to
-OCR even though you can almost see the digits, and the background palette
-cycling completely defeats block-matching optical flow attack!
+Starting to get frustrated I tried one more thing. I changed the grain sizes
+between the background and text. The mismatch is actually reasonably readable
+for a human because the difference in pixel size makes edges easier to perceive.
+And the background palette cycling completely defeats the block-matching
+optical flow attack!
 
-Happy with the results I wanted to wrap up the project but decided to try one more idea. A single frame attack.
-Wouldn't you know it, a variance attack (explain it better) pulled all the digits out! Again what's
-the point of fooling the block-matching optical flow when another algo can just get the digits from 
-individual frames.
+Happy with the results I wanted to wrap up the project but decided to try one
+more idea: a single-frame attack. The variance attack computes each pixel's
+deviation from its local mean and smooths the result, revealing the hidden
+digits through the grain-size fingerprint alone so no motion analysis needed.
+Sure enough, it pulled all the digits out. Again, what's the point of fooling
+block-matching optical flow when another algorithm can read the digits from
+individual frames?
 
-The videos was too large to upload to Github but here are the attack results.
+The video was too large to upload to GitHub but here are the attack results.
 
 ### version 4 attack results:
 
 **Block-matching optical flow**
-![Version 4 attack block-mathing result](assets/version_4_attack_block.png)
+![Version 4 attack block-matching result](assets/version_4_attack_block.png)
 
 **Variance**
 ![Version 4 attack variance result](assets/version_4_attack_var.png)
 
 ## Version 4.5:
 
-At this point, I'm totally dejected and just decide to write eveything up.
-I was a good try and I did learn a lot so no harm done. Preping the story
-for this README I started uploading videos and images. As mentoioned earlier,
-version 4 video was too large so I compressed using H.264 compression.
+At this point I was pretty dejected and just decided to write everything up.
+It was a good try and I did learn a lot so no harm done. Prepping the story
+for this README I started uploading videos and images. As mentioned earlier,
+the version 4 video was too large so I compressed it using H.264.
 You can watch it below.
 
-Direct MP4 link: [assets/version_4_compressed.mp4](assets/version\_4\_compressed.mp4)
+Direct MP4 link: [assets/version\_4\_compressed.mp4](assets/version_4_compressed.mp4)
 <video src="https://github.com/user-attachments/assets/a61ac468-5b0c-465f-9f25-db52ec732934" controls muted playsinline width="720">
   Your browser does not support embedded video. Use the direct link above.
 </video>
@@ -130,36 +133,37 @@ Direct MP4 link: [assets/version_4_compressed.mp4](assets/version\_4\_compressed
 </details>
 
 Just to be fair with the results I was presenting I decided to rerun the attacks
-on the compressed version. And something interesting happened! The algorithms
-were having a harder time getting the digits. They were guessing instead of 
-being possitive like in earlier trials.
+on the compressed version of the video. Something interesting happened which I didn't expect.
+The algorithms were having a much harder time getting the digits. 
+The compression was destroying the subtle grain-size fingerprint that the 
+variance attack relies on, while humans could still read the video just fine.
 
-Checking the results, showed that both block-matching and variance attacks had
-much less readable results. The compression greatly reduces the grain-size 
-fingerprint that the variance attack needs!
+Lowering the video quality makes it harder for algorithms but no harder for
+humans. That's exactly the kind of asymmetry this whole project is built on.
 
 ### version 4.5 attack results:
 
 **Block-matching optical flow**
-![Version 4.5 attack block-mathing result](assets/version\_4\_5\_attack\_block.png)
+![Version 4.5 attack block-matching result](assets/version_4_5_attack_block.png)
 
 **Variance**
-![Version 4.5 attack variance result](assets/version\_4\_5\_attack\_var.png)
+![Version 4.5 attack variance result](assets/version_4_5_attack_var.png)
 
 ## Conclusion
 
 Can this newest version be broken? I'm sure it can. Spending more time
-on the algorithm might produce better results. However maybe that's not the point.
-I think the concept to focus on is that no matter how advanced LLMs get they will
-fundamentally differ from humans. Can they simulate human vision to some degree
-using cleaver tricks and algorithms? Of course. However just a like humans, who can 
-use a car out run a cheetah, it doesn't mean that we are all cheetahs now.
+on the algorithm might produce better results. But maybe that's not the point.
 
-Our jagged inteligence most likely will never over lap (or even be fully absorbed) into 
-the AIs jagged intelligence. As long as we can find and probe those places 
-we should still be able to tell our selves apart. So this weird little experiment has
-taken me down an interesting technological and philosophical rabbit hole and I enjoyed
-every minute of it.
+No matter how advanced LLMs and AI get, they will fundamentally differ from
+humans. Can they simulate human vision to some degree using clever tricks and
+algorithms? Of course. But just like humans who can use a car to outrun a
+cheetah, it doesn't mean we are all cheetahs now.
+
+Our jagged intelligence will most likely never fully overlap with AI's jagged
+intelligence. As long as we can find and probe those gaps we should still be
+able to tell ourselves apart. This weird little experiment has taken me down an
+interesting technological and philosophical rabbit hole and I enjoyed every
+minute of it.
 
 ## Tools
 
@@ -209,7 +213,7 @@ Attack that one and compare the results.
 <details>
 <summary>Flag reference</summary>
 
-### generate_baseline.py
+### generate\_baseline.py
 
 | Flag | What it does |
 |------|-------------|
@@ -225,7 +229,7 @@ Attack that one and compare the results.
 | `--width`, `--height` | Output resolution (default 1920x1080) |
 | `--fps` | Frame rate (default 30) |
 
-### generate_defense.py
+### generate\_defense.py
 
 | Flag | What it does |
 |------|-------------|
@@ -259,7 +263,7 @@ Attack that one and compare the results.
 | `--background-cycle-step` | Palette rotation step for background, 0 disables (default 0) |
 | `--background-cycle-hold` | Frames between background palette rotations (default 12) |
 
-### attack_bench.py
+### attack\_bench.py
 
 | Flag | What it does |
 |------|-------------|
