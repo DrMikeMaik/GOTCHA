@@ -74,7 +74,7 @@ struggle with it?
 ### version 3 video:
 
 Direct MP4 link: [assets/version_3.mp4](assets/version_3.mp4)
-<video src="assets/version_3.mp4" controls muted playsinline width="720">
+<video src="https://github.com/user-attachments/assets/fd54bbbf-df1b-4f99-b082-af3f135a77b7" controls muted playsinline width="720">
   Your browser does not support embedded video. Use the direct link above.
 </video>
 
@@ -140,9 +140,9 @@ Just to be fair with the results I was presenting I decided to rerun the attacks
 on the compressed version of the video. Something interesting happened which I didn't expect.
 The algorithms were having a much harder time getting the digits. 
 The compression was destroying the subtle grain-size fingerprint that the 
-variance attack relies on, while humans could still decifer the video just fine.
+variance attack relies on, while humans could still decifer the video.
 
-Lowering the video quality makes it harder for algorithms but no harder for
+Lowering the video quality makes it harder for algorithms but not much harder for
 humans. That's exactly the kind of asymmetry this whole project is built on.
 
 ### compressed version attack results:
