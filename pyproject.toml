@@ -1,5 +1,5 @@
 [project]
-name = "noise-captcha"
+name = "gotcha"
 version = "0.1.0"
 description = "Hide text in visual noise so humans can read it but algorithms can't"
 readme = "README.md"

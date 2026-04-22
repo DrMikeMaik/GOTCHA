@@ -3,10 +3,16 @@
 **G**liding **O**ptical **T**rick to **C**hallenge **H**umans vs **A**lgorithms
 
 I saw a cool video about a video game noise shader and thought: what if
-overlapping random noise masks with orthogonal movement could hide a secret
-number, readable only by humans? A single frame looks like pure static. But
-when the video plays, your visual system groups the motion and the number pops
-out.
+overlapping random noise masks could hide a secret number, readable only by humans? 
+A single frame looks pretty much like static. But when the video plays, your visual 
+system groups the motion and the number pops out.
+
+## Version 1:
+
+This version uses a simple concept. Orthogonal noise masks cause each frame 
+to look like noise but the motion allows humans to see the message.
+
+### version 1 video:
 
 Direct MP4 link: [assets/version_1.mp4](assets/version_1.mp4)
 <video src="https://github.com/user-attachments/assets/a347d553-7749-4d02-b79b-76f2135326a1" controls muted playsinline width="720">
@@ -24,15 +30,20 @@ I shared it publicly and confidently claimed that biology still has a leg up
 on technology. Within hours, someone in the comments cracked it using
 block-matching optical flow. I personally dug into this attack vector
 and realized that the algorithm only required **two frames** to retrieve
-the secret message.
+the secret message!
+
+### version 1 attack results:
 
 ![Version 1 attack result](assets/version_1_attack.png)
 
+## Version 2:
+
 Instead of walking away, I spent the next few weeks trying to make it harder
-to break. The second version adds one more digit and 
-never shows all digits at once, so no single
-frame pair can recover the full secret. But sweeping across all pairs still
-lets the bot piece together the whole number.
+to break. The second version adds one more digit and never shows all digits at once, 
+so no single frame pair can recover the full secret message. 
+However sweeping across all pairs still lets the bot piece together the whole number.
+
+### version 2 video:
 
 Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
 <video src="https://github.com/user-attachments/assets/a6b1617e-8891-4e32-a6f0-8557fbaf0aca" controls muted playsinline width="720">
@@ -46,19 +57,76 @@ Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
 
 </details>
 
+### version 2 attack results:
+
 ![Version 2 attack result](assets/version_2_attack.png)
 
-The third version uses different grain sizes for the text and background.
-The mismatch is actually pleasant for a human viewer — the difference in
-pixel size makes edges easy to perceive. But individual frames are hard to
-OCR even though you can almost see the digits, and the background palette
-cycling completely defeats block-flow angle analysis.
+## Version 3:
 
-Direct MP4 link (Full resolution): [assets/version_3.mp4](assets/version_3.mp4)
+The third version switched to a tile-based motion palette. Instead of two
+simple sliding layers, every small tile moves in a randomly assigned direction.
+This completely defeated the block-flow attack because there's no longer a
+single background direction to separate from the text movement. But using the same
+grain size for both text and background made the digits very hard for humans
+to see. So what's the point of fooling an algorithm if we as humans also
+struggle with it?
+
+### version 3 video:
+
+Direct MP4 link: [assets/version_3.mp4](assets/version_3.mp4)
+<video src="https://github.com/user-attachments/assets/fd54bbbf-df1b-4f99-b082-af3f135a77b7" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
+</video>
+
+<details>
+<summary>Reveal</summary>
+
+**65828**
+
+</details>
+
+### version 3 attack results:
+
+![Version 3 attack result](assets/version_3_attack.png)
+
+## Version 4:
+
+Starting to get frustrated I tried one more thing. Instead of using the same
+grain size everywhere, I gave the background finer noise (grain 16) and the
+text coarser noise (grain 8). The mismatch is actually reasonably readable
+for a human because the difference in pixel size makes edges easier to perceive.
+And the background palette cycling still completely defeats the block-matching
+optical flow attack!
+
+Happy with the results I wanted to wrap up the project but decided to try one
+more idea: a single-frame attack. The variance attack computes each pixel's
+deviation from its local mean and smooths the result, revealing the hidden
+digits through the grain-size fingerprint alone so no motion analysis needed.
+Sure enough, it pulled all the digits out. Again, what's the point of fooling
+block-matching optical flow when another algorithm can read the digits from
+individual frames?
+
+The full-precision video was too large to upload to GitHub but here are the
+attack results. You can watch a compressed version in the next section.
+
+### version 4 attack results:
+
+**Block-matching optical flow**
+![Version 4 attack block-matching result](assets/version_4_attack_block.png)
+
+**Variance**
+![Version 4 attack variance result](assets/version_4_attack_var.png)
+
+## The Compression Twist:
+
+At this point I was pretty dejected and just decided to write everything up.
+It was a good try and I did learn a lot so no harm done. Prepping the story
+for this README I started uploading videos and images. The version 4 video
+was too large so I compressed it using H.264. You can watch it below.
+
+Direct MP4 link: [assets/version\_4\_compressed.mp4](assets/version_4_compressed.mp4)
 <video src="https://github.com/user-attachments/assets/a61ac468-5b0c-465f-9f25-db52ec732934" controls muted playsinline width="720">
   Your browser does not support embedded video. Use the direct link above.
-
-
 </video>
 
 <details>
@@ -68,15 +136,61 @@ Direct MP4 link (Full resolution): [assets/version_3.mp4](assets/version_3.mp4)
 
 </details>
 
-The attack recovered nothing — pure noise.
+Just to be fair with the results I was presenting I decided to rerun the attacks
+on the compressed version of the video. Something interesting happened which I didn't expect.
+The algorithms were having a much harder time getting the digits. 
+The compression was destroying the subtle grain-size fingerprint that the 
+variance attack relies on, while humans could still decifer the video.
 
-![Version 3 attack result](assets/version_3_attack.png)
+Lowering the video quality makes it harder for algorithms but not much harder for
+humans. That's exactly the kind of asymmetry this whole project is built on.
 
-Can it be broken? Absolutely — just not by these algorithms. Single-frame
-analysis with OCR would probably be a more effective angle, and I expect
-someone will point that out eventually. But I learned a lot, and this repo
-tells the story of that process. If you want to take the journey follow
-the links.
+### compressed version attack results:
+
+**Block-matching optical flow**
+![Compressed version attack block-matching result](assets/version_4_5_attack_block.png)
+
+**Variance**
+![Compressed version attack variance result](assets/version_4_5_attack_var.png)
+
+## Conclusion
+
+Can this newest version be broken? I'm sure it can. But each iteration made
+the attack harder and revealed something new about the gap between human
+perception and algorithmic analysis.
+
+The tile-based motion palette defeats block-matching optical flow. Split grain
+sizes restore human readability but leak a statistical fingerprint. H.264
+compression destroys that fingerprint while leaving the video perfectly
+readable to humans. Each defense trades one property for another. Funny enough,
+the most interesting discovery was accidental.
+
+All the attack tools are in this repo. Feel free to explore it for yourself.
+
+## How It Works
+
+The baseline generator (`generate_baseline.py`) uses two noise fields sliding
+in orthogonal directions — one horizontal for the background, one vertical for
+the text region. This is trivially cracked by comparing motion angles between
+any two frames.
+
+The defense generator (`generate_defense.py`) replaces this with a more
+layered approach:
+
+- **Phase-sliced reveals**: The text is split into groups (by digit, diagonal
+  band, or individual glyph). Only a subset is visible in any given frame, so
+  no single frame pair can recover the full secret.
+- **Tile-based motion palette**: The frame is divided into small tiles, each
+  assigned a random motion direction from a shared palette. There is no single
+  background direction to separate from the text, which defeats block-matching
+  optical flow.
+- **Dual grain sizes**: Background and text can use different noise
+  granularities. Finer background with coarser text makes edges perceptible to
+  humans but creates a statistical fingerprint exploitable by the variance
+  attack.
+- **H.264 compression**: Codec quantization and chroma subsampling destroy the
+  grain-size fingerprint that the variance attack relies on, while leaving the
+  video readable to humans.
 
 ## Tools
 
@@ -86,6 +200,7 @@ the links.
 | `generate_defense.py` | Defense generator — tile-based motion palette with phase-sliced reveals. |
 | `attack_bench.py` | Run the block-flow attack on a single video file. |
 | `attack_pair_sweep.py` | Sweep consecutive frame pairs across a video and rank the best attacks. |
+| `attack_variance.py` | Variance-based static-frame attack. Exploits grain-size mismatch without temporal information. |
 | `attack_resistance_sweep.py` | Generate a grid of defense settings, attack each, and rank by resistance. Saves videos for the strongest and weakest cases. |
 
 ## Try It Yourself
@@ -125,7 +240,7 @@ Attack that one and compare the results.
 <details>
 <summary>Flag reference</summary>
 
-### generate_baseline.py
+### generate\_baseline.py
 
 | Flag | What it does |
 |------|-------------|
@@ -141,26 +256,41 @@ Attack that one and compare the results.
 | `--width`, `--height` | Output resolution (default 1920x1080) |
 | `--fps` | Frame rate (default 30) |
 
-### generate_defense.py
+### generate\_defense.py
 
 | Flag | What it does |
 |------|-------------|
-| `--random-digits` | Generate a random 5-digit code internally |
-| `--grain` | Noise block size (default 3) |
-| `--background-grain` | Separate grain for background (defaults to `--grain`) |
-| `--text-grain` | Separate grain for text region (defaults to `--grain`) |
+| `--text` | Text to render (default `VISIBLE`) |
+| `--random-digits` | Generate a random 5-digit code internally instead of using `--text` |
+| `--output` | Output file path |
+| `--width`, `--height` | Output resolution (default 1920x1080) |
+| `--fps` | Frame rate (default 30) |
+| `--duration` | Clip length in seconds (default 5) |
+| `--font-size` | Text size in pixels (default 340) |
+| `--font` | Path to a `.ttf` or `.otf` font file |
+| `--seed` | Fix the random seed for reproducibility |
+| `--gif` | Write GIF output instead of MP4 |
+| `--grain` | Base noise block size in pixels (default 3) |
+| `--background-grain` | Noise grain for background fields (default 8) |
+| `--text-grain` | Noise grain for text fields (default 16) |
+| `--feather` | Gaussian blur radius on the text mask edge (default 1.25) |
+| `--text-drift` | Maximum whole-text drift in pixels (default 200) |
+| `--text-drift-speed` | Drift speed in cycles per second (default 0.16) |
 | `--tile-size` | Motion tile size in pixels (default 12) |
 | `--palette` | Motion vector palette, e.g. `"-2,0;0,-2;2,0;0,2"` |
-| `--phase-mode` | `components` (whole digits) or `bands` (diagonal slices) |
-| `--phase-count` | Number of reveal groups |
-| `--active-phases` | How many groups are visible at once |
-| `--phase-hold` | Frames each phase pattern holds before rotating |
-| `--schedule-mode` | `randomized` (default) or `cycle` (deterministic) |
-| `--schedule-span` | How many windows a visible subset persists |
-| `--background-cycle-step` | Palette rotation step for background (0 = off) |
-| `--background-cycle-hold` | Frames between background palette rotations |
+| `--text-vector-index` | Base palette index used to seed the text-phase vector cycle (default 1) |
+| `--background-vector-index` | Optional fixed palette index for all background tiles |
+| `--phase-mode` | `components` (whole digits), `bands` (diagonal slices), or `glyphs` (individual characters) |
+| `--phase-count` | Number of reveal groups (default 4) |
+| `--active-phases` | How many groups are visible at once (default 3) |
+| `--phase-hold` | Frames each phase pattern holds before rotating (default 5) |
+| `--schedule-mode` | `randomized` (default), `cycle`, `overlap_cycle`, or `pair_safe_random` |
+| `--schedule-span` | How many windows a visible subset persists (default 3) |
+| `--pair-safe-max-gap` | Maximum frame gap the pair-safe scheduler protects against (default 6) |
+| `--background-cycle-step` | Palette rotation step for background, 0 disables (default 0) |
+| `--background-cycle-hold` | Frames between background palette rotations (default 12) |
 
-### attack_bench.py
+### attack\_bench.py
 
 | Flag | What it does |
 |------|-------------|
@@ -182,6 +312,18 @@ Attack that one and compare the results.
 | `--window-stride` | Stride between candidate windows (default 1) |
 | `--include-full-window` | Also evaluate the full clip |
 | `--top-k` | How many top results to save and montage (default 12) |
+
+### attack\_variance.py
+
+| Flag | What it does |
+|------|-------------|
+| `--kernel` | Local-mean kernel size for the deviation step (default 3) |
+| `--sigma` | Gaussian blur strength for smoothing the deviation field (default 8) |
+| `--frame-step` | Keep every Nth frame from video input (default 1) |
+| `--max-frames` | Maximum frames to process, 0 means all (default 0) |
+| `--top-k` | How many highest-scoring frames to save and montage (default 12) |
+| `--montage-cols` | Number of columns in the top-k montage (default 4) |
+| `--diagnostic` | Save intermediate stages for the first frame |
 
 ### attack\_resistance\_sweep.py
 
