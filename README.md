@@ -63,10 +63,13 @@ Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
 
 ## Version 3:
 
-The third version introduced a different background noise pattern.
-While completely conquering the block-flow attack, it really lost
-its human readability. So what's the point of fooling an algorithm 
-if we as humans also struggle with it?
+The third version switched to a tile-based motion palette. Instead of two
+simple sliding layers, every small tile moves in a randomly assigned direction.
+This completely defeated the block-flow attack because there's no longer a
+single background direction to separate from the text movement. But using the same
+grain size for both text and background made the digits very hard for humans
+to see. So what's the point of fooling an algorithm if we as humans also
+struggle with it?
 
 ### version 3 video:
 
@@ -88,10 +91,11 @@ Direct MP4 link: [assets/version_3.mp4](assets/version_3.mp4)
 
 ## Version 4:
 
-Starting to get frustrated I tried one more thing. I changed the grain sizes
-between the background and text. The mismatch is actually reasonably readable
+Starting to get frustrated I tried one more thing. Instead of using the same
+grain size everywhere, I gave the background finer noise (grain 16) and the
+text coarser noise (grain 8). The mismatch is actually reasonably readable
 for a human because the difference in pixel size makes edges easier to perceive.
-And the background palette cycling completely defeats the block-matching
+And the background palette cycling still completely defeats the block-matching
 optical flow attack!
 
 Happy with the results I wanted to wrap up the project but decided to try one
@@ -102,7 +106,8 @@ Sure enough, it pulled all the digits out. Again, what's the point of fooling
 block-matching optical flow when another algorithm can read the digits from
 individual frames?
 
-The video was too large to upload to GitHub but here are the attack results.
+The full-precision video was too large to upload to GitHub but here are the
+attack results. You can watch a compressed version in the next section.
 
 ### version 4 attack results:
 
@@ -112,13 +117,12 @@ The video was too large to upload to GitHub but here are the attack results.
 **Variance**
 ![Version 4 attack variance result](assets/version_4_attack_var.png)
 
-## Version 4.5:
+## The Compression Twist:
 
 At this point I was pretty dejected and just decided to write everything up.
 It was a good try and I did learn a lot so no harm done. Prepping the story
-for this README I started uploading videos and images. As mentioned earlier,
-the version 4 video was too large so I compressed it using H.264.
-You can watch it below.
+for this README I started uploading videos and images. The version 4 video
+was too large so I compressed it using H.264. You can watch it below.
 
 Direct MP4 link: [assets/version\_4\_compressed.mp4](assets/version_4_compressed.mp4)
 <video src="https://github.com/user-attachments/assets/a61ac468-5b0c-465f-9f25-db52ec732934" controls muted playsinline width="720">
@@ -136,34 +140,57 @@ Just to be fair with the results I was presenting I decided to rerun the attacks
 on the compressed version of the video. Something interesting happened which I didn't expect.
 The algorithms were having a much harder time getting the digits. 
 The compression was destroying the subtle grain-size fingerprint that the 
-variance attack relies on, while humans could still read the video just fine.
+variance attack relies on, while humans could still decifer the video just fine.
 
 Lowering the video quality makes it harder for algorithms but no harder for
 humans. That's exactly the kind of asymmetry this whole project is built on.
 
-### version 4.5 attack results:
+### compressed version attack results:
 
 **Block-matching optical flow**
-![Version 4.5 attack block-matching result](assets/version_4_5_attack_block.png)
+![Compressed version attack block-matching result](assets/version_4_5_attack_block.png)
 
 **Variance**
-![Version 4.5 attack variance result](assets/version_4_5_attack_var.png)
+![Compressed version attack variance result](assets/version_4_5_attack_var.png)
 
 ## Conclusion
 
-Can this newest version be broken? I'm sure it can. Spending more time
-on the algorithm might produce better results. But maybe that's not the point.
+Can this newest version be broken? I'm sure it can. But each iteration made
+the attack harder and revealed something new about the gap between human
+perception and algorithmic analysis.
 
-No matter how advanced LLMs and AI get, they will fundamentally differ from
-humans. Can they simulate human vision to some degree using clever tricks and
-algorithms? Of course. But just like humans who can use a car to outrun a
-cheetah, it doesn't mean we are all cheetahs now.
+The tile-based motion palette defeats block-matching optical flow. Split grain
+sizes restore human readability but leak a statistical fingerprint. H.264
+compression destroys that fingerprint while leaving the video perfectly
+readable to humans. Each defense trades one property for another. Funny enough,
+the most interesting discovery was accidental.
 
-Our jagged intelligence will most likely never fully overlap with AI's jagged
-intelligence. As long as we can find and probe those gaps we should still be
-able to tell ourselves apart. This weird little experiment has taken me down an
-interesting technological and philosophical rabbit hole and I enjoyed every
-minute of it.
+All the attack tools are in this repo. Feel free to explore it for yourself.
+
+## How It Works
+
+The baseline generator (`generate_baseline.py`) uses two noise fields sliding
+in orthogonal directions — one horizontal for the background, one vertical for
+the text region. This is trivially cracked by comparing motion angles between
+any two frames.
+
+The defense generator (`generate_defense.py`) replaces this with a more
+layered approach:
+
+- **Phase-sliced reveals**: The text is split into groups (by digit, diagonal
+  band, or individual glyph). Only a subset is visible in any given frame, so
+  no single frame pair can recover the full secret.
+- **Tile-based motion palette**: The frame is divided into small tiles, each
+  assigned a random motion direction from a shared palette. There is no single
+  background direction to separate from the text, which defeats block-matching
+  optical flow.
+- **Dual grain sizes**: Background and text can use different noise
+  granularities. Finer background with coarser text makes edges perceptible to
+  humans but creates a statistical fingerprint exploitable by the variance
+  attack.
+- **H.264 compression**: Codec quantization and chroma subsampling destroy the
+  grain-size fingerprint that the variance attack relies on, while leaving the
+  video readable to humans.
 
 ## Tools
 
