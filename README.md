@@ -3,10 +3,16 @@
 **G**liding **O**ptical **T**rick to **C**hallenge **H**umans vs **A**lgorithms
 
 I saw a cool video about a video game noise shader and thought: what if
-overlapping random noise masks with orthogonal movement could hide a secret
-number, readable only by humans? A single frame looks like pure static. But
-when the video plays, your visual system groups the motion and the number pops
-out.
+overlapping random noise masks could hide a secret number, readable only by humans? 
+A single frame looks pretty much like static. But when the video plays, your visual 
+system groups the motion and the number pops out.
+
+## Version 1:
+
+This version uses a simple concept. Orthogonal noise masks cause each frame 
+to look like noise but the motions allows humans to see the message.
+
+### version 1 video:
 
 Direct MP4 link: [assets/version_1.mp4](assets/version_1.mp4)
 <video src="https://github.com/user-attachments/assets/a347d553-7749-4d02-b79b-76f2135326a1" controls muted playsinline width="720">
@@ -24,15 +30,20 @@ I shared it publicly and confidently claimed that biology still has a leg up
 on technology. Within hours, someone in the comments cracked it using
 block-matching optical flow. I personally dug into this attack vector
 and realized that the algorithm only required **two frames** to retrieve
-the secret message.
+the secret message!
+
+### version 1 attack results:
 
 ![Version 1 attack result](assets/version_1_attack.png)
 
+## Version 2:
+
 Instead of walking away, I spent the next few weeks trying to make it harder
-to break. The second version adds one more digit and 
-never shows all digits at once, so no single
-frame pair can recover the full secret. But sweeping across all pairs still
-lets the bot piece together the whole number.
+to break. The second version adds one more digit and never shows all digits at once, 
+so no single frame pair can recover the full secret message. 
+However sweeping across all pairs still lets the bot piece together the whole number.
+
+### version 2 video:
 
 Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
 <video src="https://github.com/user-attachments/assets/a6b1617e-8891-4e32-a6f0-8557fbaf0aca" controls muted playsinline width="720">
@@ -46,19 +57,69 @@ Direct MP4 link: [assets/version_2.mp4](assets/version_2.mp4)
 
 </details>
 
+### version 2 attack results:
+
 ![Version 2 attack result](assets/version_2_attack.png)
 
-The third version uses different grain sizes for the text and background.
-The mismatch is actually pleasant for a human viewer — the difference in
-pixel size makes edges easy to perceive. But individual frames are hard to
-OCR even though you can almost see the digits, and the background palette
-cycling completely defeats block-flow angle analysis.
+## Version 3:
 
-Direct MP4 link (Full resolution): [assets/version_3.mp4](assets/version_3.mp4)
+The third version introduced a different background noise pattern.
+While completely conquering the block flow attack, it really lost
+its human readability. So what's the point of fooling an algorithm 
+if we as humans also struggle with it?
+
+### version 3 video:
+
+Direct MP4 link: [assets/version_3.mp4](assets/version_3.mp4)
+<video src="assets/version_3.mp4" controls muted playsinline width="720">
+  Your browser does not support embedded video. Use the direct link above.
+</video>
+
+<details>
+<summary>Reveal</summary>
+
+**65828**
+
+</details>
+
+### version 3 attack results:
+
+![Version 3 attack result](assets/version_3_attack.png)
+
+## Version 4:
+
+Starting to get frustrated I tried one more thing. I changed the grain sizes between the background and text.
+The mismatch is actually reasonably readable for a human viewer. The difference in
+pixel size makes edges easier to perceive. But individual frames are hard to
+OCR even though you can almost see the digits, and the background palette
+cycling completely defeats block-matching optical flow attack!
+
+Happy with the results I wanted to wrap up the project but decided to try one more idea. A single frame attack.
+Wouldn't you know it, a variance attack (explain it better) pulled all the digits out! Again what's
+the point of fooling the block-matching optical flow when another algo can just get the digits from 
+individual frames.
+
+The videos was too large to upload to Github but here are the attack results.
+
+### version 4 attack results:
+
+**Block-matching optical flow**
+![Version 4 attack block-mathing result](assets/version_4_attack_block.png)
+
+**Variance**
+![Version 4 attack variance result](assets/version_4_attack_var.png)
+
+## Version 4.5:
+
+At this point, I'm totally dejected and just decide to write eveything up.
+I was a good try and I did learn a lot so no harm done. Preping the story
+for this README I started uploading videos and images. As mentoioned earlier,
+version 4 video was too large so I compressed using H.264 compression.
+You can watch it below.
+
+Direct MP4 link: [assets/version_4_compressed.mp4](assets/version\_4\_compressed.mp4)
 <video src="https://github.com/user-attachments/assets/a61ac468-5b0c-465f-9f25-db52ec732934" controls muted playsinline width="720">
   Your browser does not support embedded video. Use the direct link above.
-
-
 </video>
 
 <details>
@@ -68,15 +129,37 @@ Direct MP4 link (Full resolution): [assets/version_3.mp4](assets/version_3.mp4)
 
 </details>
 
-The attack recovered nothing — pure noise.
+Just to be fair with the results I was presenting I decided to rerun the attacks
+on the compressed version. And something interesting happened! The algorithms
+were having a harder time getting the digits. They were guessing instead of 
+being possitive like in earlier trials.
 
-![Version 3 attack result](assets/version_3_attack.png)
+Checking the results, showed that both block-matching and variance attacks had
+much less readable results. The compression greatly reduces the grain-size 
+fingerprint that the variance attack needs!
 
-Can it be broken? Absolutely — just not by these algorithms. Single-frame
-analysis with OCR would probably be a more effective angle, and I expect
-someone will point that out eventually. But I learned a lot, and this repo
-tells the story of that process. If you want to take the journey follow
-the links.
+### version 4.5 attack results:
+
+**Block-matching optical flow**
+![Version 4.5 attack block-mathing result](assets/version\_4\_5\_attack\_block.png)
+
+**Variance**
+![Version 4.5 attack variance result](assets/version\_4\_5\_attack\_var.png)
+
+## Conclusion
+
+Can this newest version be broken? I'm sure it can. Spending more time
+on the algorithm might produce better results. However maybe that's not the point.
+I think the concept to focus on is that no matter how advanced LLMs get they will
+fundamentally differ from humans. Can they simulate human vision to some degree
+using cleaver tricks and algorithms? Of course. However just a like humans, who can 
+use a car out run a cheetah, it doesn't mean that we are all cheetahs now.
+
+Our jagged inteligence most likely will never over lap (or even be fully absorbed) into 
+the AIs jagged intelligence. As long as we can find and probe those places 
+we should still be able to tell our selves apart. So this weird little experiment has
+taken me down an interesting technological and philosophical rabbit hole and I enjoyed
+every minute of it.
 
 ## Tools
 
